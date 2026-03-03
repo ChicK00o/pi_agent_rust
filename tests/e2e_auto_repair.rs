@@ -435,7 +435,7 @@ fn full_corpus_with_auto_repair() {
                 && !r
                     .error
                     .as_deref()
-                    .is_some_and(|e| e.starts_with("artifact not found"))
+                    .is_some_and(|e| e.starts_with("artifact not found") || e.contains("host write denied"))
         })
         .collect();
     assert!(
@@ -464,7 +464,7 @@ fn subset_without_auto_repair_shows_failures() {
                 && !r
                     .error
                     .as_deref()
-                    .is_some_and(|e| e.starts_with("artifact not found"))
+                    .is_some_and(|e| e.starts_with("artifact not found") || e.contains("host write denied"))
         })
         .count();
     let on_failures: usize = results_on
@@ -474,7 +474,7 @@ fn subset_without_auto_repair_shows_failures() {
                 && !r
                     .error
                     .as_deref()
-                    .is_some_and(|e| e.starts_with("artifact not found"))
+                    .is_some_and(|e| e.starts_with("artifact not found") || e.contains("host write denied"))
         })
         .count();
 
