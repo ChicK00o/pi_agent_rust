@@ -5779,9 +5779,9 @@ fn resolve_module_path(
             return None;
         }
         let canonical = crate::extensions::safe_canonicalize(&resolved);
-        let allowed = canonical_roots.iter().any(|canonical_root| {
-            canonical.starts_with(canonical_root)
-        });
+        let allowed = canonical_roots
+            .iter()
+            .any(|canonical_root| canonical.starts_with(canonical_root));
         if !allowed {
             tracing::warn!(
                 event = "pijs.resolve.monotonicity_violation",
@@ -5816,9 +5816,9 @@ fn resolve_module_path(
         return None;
     }
     let canonical = crate::extensions::safe_canonicalize(&path);
-    let allowed = canonical_roots.iter().any(|canonical_root| {
-        canonical.starts_with(canonical_root)
-    });
+    let allowed = canonical_roots
+        .iter()
+        .any(|canonical_root| canonical.starts_with(canonical_root));
 
     if !allowed {
         return None;
@@ -5832,9 +5832,9 @@ fn resolve_module_path(
             return None;
         }
         let canonical_resolved = crate::extensions::safe_canonicalize(&resolved);
-        let allowed = canonical_roots.iter().any(|canonical_root| {
-            canonical_resolved.starts_with(canonical_root)
-        });
+        let allowed = canonical_roots
+            .iter()
+            .any(|canonical_root| canonical_resolved.starts_with(canonical_root));
 
         if !allowed {
             tracing::warn!(
@@ -18973,27 +18973,50 @@ import { isIPv4 as netIsIpv4 } from "node:net";
 
         let mode = RepairMode::default();
         let roots = vec![root.to_path_buf()];
-        let canonical_roots = roots.iter().map(|p| crate::extensions::safe_canonicalize(p)).collect::<Vec<_>>();
+        let canonical_roots = roots
+            .iter()
+            .map(|p| crate::extensions::safe_canonicalize(p))
+            .collect::<Vec<_>>();
 
-        let resolved_pkg =
-            resolve_module_path(base.to_string_lossy().as_ref(), "./pkg", mode, &roots, &canonical_roots)
-                .expect("resolve ./pkg");
+        let resolved_pkg = resolve_module_path(
+            base.to_string_lossy().as_ref(),
+            "./pkg",
+            mode,
+            &roots,
+            &canonical_roots,
+        )
+        .expect("resolve ./pkg");
         assert_eq!(resolved_pkg, pkg_index_ts);
 
-        let resolved_module =
-            resolve_module_path(base.to_string_lossy().as_ref(), "./module", mode, &roots, &canonical_roots)
-                .expect("resolve ./module");
+        let resolved_module = resolve_module_path(
+            base.to_string_lossy().as_ref(),
+            "./module",
+            mode,
+            &roots,
+            &canonical_roots,
+        )
+        .expect("resolve ./module");
         assert_eq!(resolved_module, module_ts);
 
-        let resolved_json =
-            resolve_module_path(base.to_string_lossy().as_ref(), "./only_json", mode, &roots, &canonical_roots)
-                .expect("resolve ./only_json");
+        let resolved_json = resolve_module_path(
+            base.to_string_lossy().as_ref(),
+            "./only_json",
+            mode,
+            &roots,
+            &canonical_roots,
+        )
+        .expect("resolve ./only_json");
         assert_eq!(resolved_json, only_json);
 
         let file_url = format!("file://{}", module_ts.display());
-        let resolved_file_url =
-            resolve_module_path(base.to_string_lossy().as_ref(), &file_url, mode, &roots, &canonical_roots)
-                .expect("file://");
+        let resolved_file_url = resolve_module_path(
+            base.to_string_lossy().as_ref(),
+            &file_url,
+            mode,
+            &roots,
+            &canonical_roots,
+        )
+        .expect("file://");
         assert_eq!(resolved_file_url, module_ts);
     }
 
@@ -19012,10 +19035,18 @@ import { isIPv4 as netIsIpv4 } from "node:net";
 
         let mode = RepairMode::default();
         let roots = vec![extension_root];
-        let canonical_roots = roots.iter().map(|p| crate::extensions::safe_canonicalize(p)).collect::<Vec<_>>();
+        let canonical_roots = roots
+            .iter()
+            .map(|p| crate::extensions::safe_canonicalize(p))
+            .collect::<Vec<_>>();
         let file_url = format!("file://{}", outside.display());
-        let resolved =
-            resolve_module_path(base.to_string_lossy().as_ref(), &file_url, mode, &roots, &canonical_roots);
+        let resolved = resolve_module_path(
+            base.to_string_lossy().as_ref(),
+            &file_url,
+            mode,
+            &roots,
+            &canonical_roots,
+        );
         assert!(
             resolved.is_none(),
             "file:// import outside extension root should be blocked, got {resolved:?}"
@@ -19037,10 +19068,18 @@ import { isIPv4 as netIsIpv4 } from "node:net";
 
         let mode = RepairMode::default();
         let roots = vec![extension_root];
-        let canonical_roots = roots.iter().map(|p| crate::extensions::safe_canonicalize(p)).collect::<Vec<_>>();
+        let canonical_roots = roots
+            .iter()
+            .map(|p| crate::extensions::safe_canonicalize(p))
+            .collect::<Vec<_>>();
         let file_url = format!("file://{}", inside.display());
-        let resolved =
-            resolve_module_path(base.to_string_lossy().as_ref(), &file_url, mode, &roots, &canonical_roots);
+        let resolved = resolve_module_path(
+            base.to_string_lossy().as_ref(),
+            &file_url,
+            mode,
+            &roots,
+            &canonical_roots,
+        );
         assert_eq!(resolved, Some(inside));
     }
 
