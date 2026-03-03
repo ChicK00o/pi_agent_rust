@@ -700,10 +700,10 @@ fn default_model_from_candidates(candidates: &[ModelEntry]) -> ModelEntry {
         ("cerebras", "zai-glm-4.6"),
         ("zai", "glm-4.6"),
         ("mistral", "devstral-medium-latest"),
-        ("minimax", "MiniMax-M2.1"),
-        ("minimax-cn", "MiniMax-M2.1"),
+        ("minimax", "MiniMax-M2.5"),
+        ("minimax-cn", "MiniMax-M2.5"),
         ("huggingface", "moonshotai/Kimi-K2.5"),
-        ("opencode", "claude-opus-4-5"),
+        ("opencode", "claude-opus-4-6"),
         ("kimi-coding", "kimi-k2-thinking"),
     ];
 
