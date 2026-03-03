@@ -2748,7 +2748,7 @@ impl<C: SchedulerClock + 'static> ExtensionDispatcher<C> {
                             break status;
                         }
 
-                        if cancel_worker.load(AtomicOrdering::SeqCst) {
+                        if !killed && cancel_worker.load(AtomicOrdering::SeqCst) {
                             killed = true;
                             crate::tools::kill_process_tree(Some(pid));
                             let _ = child.kill();
@@ -2756,7 +2756,7 @@ impl<C: SchedulerClock + 'static> ExtensionDispatcher<C> {
                         }
 
                         if let Some(timeout_ms) = timeout_ms {
-                            if start.elapsed() >= Duration::from_millis(timeout_ms) {
+                            if !killed && start.elapsed() >= Duration::from_millis(timeout_ms) {
                                 killed = true;
                                 crate::tools::kill_process_tree(Some(pid));
                                 let _ = child.kill();
@@ -2949,7 +2949,7 @@ impl<C: SchedulerClock + 'static> ExtensionDispatcher<C> {
                     }
 
                     if let Some(timeout_ms) = timeout_ms {
-                        if start.elapsed() >= Duration::from_millis(timeout_ms) {
+                        if !killed && start.elapsed() >= Duration::from_millis(timeout_ms) {
                             killed = true;
                             crate::tools::kill_process_tree(Some(pid));
                             let _ = child.kill();
