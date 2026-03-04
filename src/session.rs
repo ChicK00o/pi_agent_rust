@@ -2288,9 +2288,13 @@ impl Session {
         let mut reverted_any = false;
 
         while let Some(id) = current_id {
-            if let Some(SessionEntry::Message(msg_entry)) = self.get_entry(&id) {
-                let parent_id = msg_entry.base.parent_id.clone();
-                let is_user = matches!(msg_entry.message, SessionMessage::User { .. });
+            if let Some(entry) = self.get_entry(&id) {
+                let parent_id = entry.base().parent_id.clone();
+                let is_user = if let SessionEntry::Message(msg_entry) = entry {
+                    matches!(msg_entry.message, SessionMessage::User { .. })
+                } else {
+                    false
+                };
 
                 self.leaf_id.clone_from(&parent_id);
                 self.is_linear = false;

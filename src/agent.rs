@@ -5112,7 +5112,13 @@ impl AgentSession {
             .lock(cx.cx())
             .await
             .map_err(|e| Error::session(e.to_string()))?;
-        Ok(session.revert_last_user_message())
+        
+        let reverted = session.revert_last_user_message();
+        if reverted {
+            let messages = session.to_messages_for_current_path();
+            self.agent.replace_messages(messages);
+        }
+        Ok(reverted)
     }
 
     async fn dispatch_input_event(

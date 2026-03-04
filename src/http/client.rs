@@ -191,22 +191,20 @@ impl<'a> RequestBuilder<'a> {
                 status,
                 headers: response_headers,
                 stream,
-                deadline: None,
+                timeout_info: None,
             });
         }
 
         let send_fut = send_parts(client, method, &url, &headers, &body);
 
-        let (status, response_headers, stream, deadline) = if let Some(duration) = timeout {
+        let (status, response_headers, stream, timeout_info) = if let Some(duration) = timeout {
             use asupersync::time::{sleep, wall_now};
             use futures::future::{Either, FutureExt, select};
 
-            let std_now = std::time::Instant::now();
             let asupersync_now = asupersync::Cx::current()
                 .and_then(|cx| cx.timer_driver())
                 .map_or_else(wall_now, |timer| timer.now());
             
-            let deadline = std_now + duration;
             let sleep_fut = sleep(asupersync_now, duration).fuse();
             let send_fut = send_fut.fuse();
             futures::pin_mut!(sleep_fut, send_fut);
@@ -215,7 +213,7 @@ impl<'a> RequestBuilder<'a> {
                 Either::Left((res, _)) => res?,
                 Either::Right(_) => return Err(Error::api("Request timed out")),
             };
-            (status, response_headers, stream, Some(deadline))
+            (status, response_headers, stream, Some((asupersync_now, duration)))
         } else {
             let (status, response_headers, stream) = send_fut.await?;
             (status, response_headers, stream, None)
@@ -225,7 +223,7 @@ impl<'a> RequestBuilder<'a> {
             status,
             headers: response_headers,
             stream,
-            deadline,
+            timeout_info,
         })
     }
 }
@@ -311,7 +309,7 @@ pub struct Response {
     status: u16,
     headers: Vec<(String, String)>,
     stream: Pin<Box<dyn Stream<Item = std::io::Result<Vec<u8>>> + Send>>,
-    deadline: Option<std::time::Instant>,
+    timeout_info: Option<(asupersync::Time, std::time::Duration)>,
 }
 
 impl Response {
@@ -331,7 +329,7 @@ impl Response {
     }
 
     pub async fn text(self) -> Result<String> {
-        let deadline = self.deadline;
+        let timeout_info = self.timeout_info;
         let read_fut = self
             .stream
             .try_fold(Vec::new(), |mut acc, chunk| async move {
@@ -342,20 +340,20 @@ impl Response {
                 Ok::<_, std::io::Error>(acc)
             });
 
-        let bytes = if let Some(deadline) = deadline {
+        let bytes = if let Some((start_time, timeout)) = timeout_info {
             use asupersync::time::{sleep, wall_now};
             use futures::future::{Either, FutureExt, select};
-
-            let std_now = std::time::Instant::now();
-            if std_now >= deadline {
-                return Err(Error::api("Request timed out reading body"));
-            }
 
             let asupersync_now = asupersync::Cx::current()
                 .and_then(|cx| cx.timer_driver())
                 .map_or_else(wall_now, |timer| timer.now());
             
-            let sleep_fut = sleep(asupersync_now, deadline.duration_since(std_now)).fuse();
+            let elapsed = std::time::Duration::from_millis(asupersync_now.duration_since(start_time));
+            if elapsed >= timeout {
+                return Err(Error::api("Request timed out reading body"));
+            }
+
+            let sleep_fut = sleep(asupersync_now, timeout - elapsed).fuse();
             let read_fut = read_fut.fuse();
             futures::pin_mut!(sleep_fut, read_fut);
 
@@ -1307,7 +1305,7 @@ mod tests {
             status: 200,
                 headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
                 stream: Box::pin(futures::stream::empty()),
-                deadline: None,
+                timeout_info: None,
             };
         assert_eq!(response.status(), 200);
         assert_eq!(response.headers().len(), 1);
@@ -1322,7 +1320,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let text = response.text().await.unwrap();
             assert_eq!(text, "hello world");
@@ -1336,7 +1334,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::empty()),
-                deadline: None,
+                timeout_info: None,
             };
             let text = response.text().await.unwrap();
             assert_eq!(text, "");
@@ -1351,7 +1349,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let mut stream = response.bytes_stream();
             let first = stream.next().await.unwrap().unwrap();
@@ -1371,7 +1369,7 @@ mod tests {
                 status: 200,
                 headers: vec![("Content-Length".to_string(), "13".to_string())],
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let text = response.text().await.unwrap();
             assert_eq!(text, "Hello, World!");
@@ -1390,7 +1388,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let text = response.text().await.unwrap();
             assert_eq!(text, "chunk1chunk2chunk3");
@@ -1411,7 +1409,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let result = response.text().await;
             assert!(result.is_err());
@@ -1509,7 +1507,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let result = response.text().await;
             assert!(result.is_err());
@@ -1530,7 +1528,7 @@ mod tests {
                 status: 200,
                 headers: Vec::new(),
                 stream: Box::pin(futures::stream::iter(chunks)),
-                deadline: None,
+                timeout_info: None,
             };
             let result = response.text().await;
             assert!(result.is_ok());
