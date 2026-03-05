@@ -1023,11 +1023,34 @@ fn is_alias(model_id: &str) -> bool {
         return true;
     }
 
+    // Check for OpenAI style: YYYY-MM-DD
+    let parts: Vec<&str> = model_id.split('-').collect();
+    if parts.len() >= 3 {
+        let y = parts[parts.len() - 3];
+        let m = parts[parts.len() - 2];
+        let d = parts[parts.len() - 1];
+        if y.len() == 4 && m.len() == 2 && d.len() == 2
+            && y.chars().all(|c| c.is_ascii_digit())
+            && m.chars().all(|c| c.is_ascii_digit())
+            && d.chars().all(|c| c.is_ascii_digit())
+        {
+            return false;
+        }
+    }
+
     let Some((_, date_suffix)) = model_id.rsplit_once('-') else {
         return true;
     };
 
-    date_suffix.len() != 8 || !date_suffix.chars().all(|c| c.is_ascii_digit())
+    if date_suffix.len() == 8 && date_suffix.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    if date_suffix.len() == 4 && date_suffix.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    true
 }
 
 fn models_equal(left: &ModelEntry, right: &ModelEntry) -> bool {
@@ -1694,8 +1717,8 @@ mod tests {
             #[test]
             fn is_alias_non_eight_digit_suffix(prefix in "[a-z]{1,6}", suffix in "[a-z0-9]{1,7}") {
                 let id = format!("{prefix}-{suffix}");
-                // Only 8 pure-digit suffixes are non-alias
-                if suffix.len() == 8 && suffix.chars().all(|c| c.is_ascii_digit()) {
+                let is_pure_digits = suffix.chars().all(|c| c.is_ascii_digit());
+                if is_pure_digits && (suffix.len() == 8 || suffix.len() == 4) {
                     assert!(!is_alias(&id));
                 } else {
                     assert!(is_alias(&id));
