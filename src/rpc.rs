@@ -4768,6 +4768,7 @@ mod tests {
     fn supports_xhigh_known_models() {
         assert!(dummy_entry("gpt-5.1-codex-max", true).supports_xhigh());
         assert!(dummy_entry("gpt-5.2", true).supports_xhigh());
+        assert!(dummy_entry("gpt-5.4", true).supports_xhigh());
         assert!(dummy_entry("gpt-5.2-codex", true).supports_xhigh());
         assert!(dummy_entry("gpt-5.3-codex", true).supports_xhigh());
     }

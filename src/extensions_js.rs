@@ -20213,6 +20213,7 @@ export default ConfigLoader;
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn pijs_custom_ui_width_updates_trigger_reflow() {
         futures::executor::block_on(async {
             let clock = Arc::new(DeterministicClock::new(0));
@@ -20248,6 +20249,7 @@ export default ConfigLoader;
 
             let mut initial_frame_call = None;
             let mut initial_poll_call = None;
+            let mut unexpected_initial_hostcall = None;
             for request in initial_requests {
                 match &request.kind {
                     HostcallKind::Ui { op } if op == "setWidget" => {
@@ -20256,9 +20258,15 @@ export default ConfigLoader;
                     HostcallKind::Ui { op } if op == "custom" => {
                         initial_poll_call = Some(request);
                     }
-                    other => panic!("unexpected initial hostcall: {other:?}"),
+                    other => {
+                        unexpected_initial_hostcall = Some(format!("{other:?}"));
+                    }
                 }
             }
+            assert_eq!(
+                unexpected_initial_hostcall, None,
+                "unexpected initial hostcall"
+            );
 
             let initial_frame_call = initial_frame_call.expect("initial frame hostcall");
             assert_eq!(

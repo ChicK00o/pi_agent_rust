@@ -32,6 +32,7 @@ impl ModelEntry {
             self.model.id.as_str(),
             "gpt-5.1-codex-max"
                 | "gpt-5.2"
+                | "gpt-5.4"
                 | "gpt-5.2-codex"
                 | "gpt-5.3-codex"
                 | "gpt-5.3-codex-spark"
@@ -411,6 +412,10 @@ pub fn model_autocomplete_candidates() -> &'static [ModelAutocompleteCandidate] 
             candidates.push(ModelAutocompleteCandidate {
                 slug: "anthropic/claude-sonnet-4-6".to_string(),
                 description: Some("Claude Sonnet 4.6".to_string()),
+            });
+            candidates.push(ModelAutocompleteCandidate {
+                slug: "openai/gpt-5.4".to_string(),
+                description: Some("GPT-5.4".to_string()),
             });
             candidates.sort_by_key(|candidate| candidate.slug.to_ascii_lowercase());
             candidates.dedup_by(|a, b| a.slug.eq_ignore_ascii_case(&b.slug));
@@ -1017,6 +1022,55 @@ fn built_in_models(auth: &AuthStorage, mode: ModelRegistryLoadMode) -> Vec<Model
                 auth,
                 "anthropic",
                 "anthropic",
+                &mut canonical_api_key_cache,
+                &mut provider_api_key_cache,
+            ),
+            headers: HashMap::new(),
+            auth_header: false,
+            compat: None,
+            oauth_config: None,
+        });
+    }
+
+    // Ensure the latest GPT-5 default exists for OpenAI routing.
+    //
+    // The legacy catalog can lag behind upstream model IDs; we add a
+    // conservative seed so listing, lookup, and autocomplete stay current.
+    if !models
+        .iter()
+        .any(|entry| entry.model.provider == "openai" && entry.model.id == "gpt-5.4")
+    {
+        models.push(ModelEntry {
+            model: Model {
+                id: "gpt-5.4".to_string(),
+                name: "GPT-5.4".to_string(),
+                api: if mode == ModelRegistryLoadMode::Full {
+                    Api::OpenAIResponses.to_string()
+                } else {
+                    "openai-responses".to_string()
+                },
+                provider: "openai".to_string(),
+                base_url: if mode == ModelRegistryLoadMode::Full {
+                    "https://api.openai.com/v1".to_string()
+                } else {
+                    String::new()
+                },
+                reasoning: true,
+                input: vec![InputType::Text, InputType::Image],
+                cost: ModelCost {
+                    input: 0.0,
+                    output: 0.0,
+                    cache_read: 0.0,
+                    cache_write: 0.0,
+                },
+                context_window: 400_000,
+                max_tokens: 128_000,
+                headers: HashMap::new(),
+            },
+            api_key: resolve_provider_api_key_cached(
+                auth,
+                "openai",
+                "openai",
                 &mut canonical_api_key_cache,
                 &mut provider_api_key_cache,
             ),
@@ -1765,6 +1819,11 @@ mod tests {
         assert!(
             models
                 .iter()
+                .any(|m| m.model.provider == "openai" && m.model.id == "gpt-5.4")
+        );
+        assert!(
+            models
+                .iter()
                 .any(|m| m.model.provider == "google" && m.model.id == "gemini-2.5-pro")
         );
         assert!(
@@ -1849,6 +1908,11 @@ mod tests {
             candidates
                 .iter()
                 .any(|candidate| candidate.slug == "google-gemini-cli/gemini-2.5-pro")
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.slug == "openai/gpt-5.4")
         );
         assert!(
             candidates
@@ -2392,6 +2456,7 @@ mod tests {
     fn supports_xhigh_for_known_models() {
         assert!(make_model_entry("gpt-5.1-codex-max", true).supports_xhigh());
         assert!(make_model_entry("gpt-5.2", true).supports_xhigh());
+        assert!(make_model_entry("gpt-5.4", true).supports_xhigh());
         assert!(make_model_entry("gpt-5.2-codex", true).supports_xhigh());
         assert!(make_model_entry("gpt-5.3-codex", true).supports_xhigh());
         assert!(make_model_entry("gpt-5.3-codex-spark", true).supports_xhigh());
@@ -3461,6 +3526,7 @@ mod tests {
                     id.as_str(),
                     "gpt-5.1-codex-max"
                         | "gpt-5.2"
+                        | "gpt-5.4"
                         | "gpt-5.2-codex"
                         | "gpt-5.3-codex"
                         | "gpt-5.3-codex-spark"
