@@ -12,6 +12,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 
 use rquickjs::function::Func;
 use rquickjs::{ArrayBuffer, Ctx, Value};
@@ -428,6 +429,7 @@ pub(crate) fn inject_wasm_globals(
                         .get_mut(&instance_id)
                         .ok_or_else(|| throw_wasm(&ctx, "RuntimeError", "Instance not found"))?;
 
+                    let started = Instant::now();
                     let func = inst
                         .instance
                         .get_func(&mut inst.store, &name)
@@ -463,8 +465,21 @@ pub(crate) fn inject_wasm_globals(
                         .map(|ty| Val::default_for_ty(ty).unwrap_or(Val::I32(0)))
                         .collect();
 
+                    debug!(
+                        instance_id,
+                        export = %name,
+                        argc = params.len(),
+                        "wasm: call export start"
+                    );
                     func.call(&mut inst.store, &params, &mut results)
                         .map_err(|e| throw_wasm(&ctx, "RuntimeError", &e.to_string()))?;
+                    debug!(
+                        instance_id,
+                        export = %name,
+                        argc = params.len(),
+                        elapsed_ms = started.elapsed().as_millis(),
+                        "wasm: call export"
+                    );
 
                     // Return first result as f64 (supports i32/f32/f64 only).
                     results.first().map_or(Ok(0.0), |val| val_to_f64(&ctx, val))
@@ -485,6 +500,7 @@ pub(crate) fn inject_wasm_globals(
                         .instances
                         .get_mut(&instance_id)
                         .ok_or_else(|| throw_wasm(&ctx, "RuntimeError", "Instance not found"))?;
+                    let started = Instant::now();
                     let memory = inst
                         .instance
                         .get_memory(&mut inst.store, &mem_name)
@@ -493,6 +509,13 @@ pub(crate) fn inject_wasm_globals(
                     let len = i32::try_from(data.len()).unwrap_or(i32::MAX);
                     let buffer = ArrayBuffer::new_copy(ctx.clone(), data)?;
                     ctx.globals().set("__pi_wasm_tmp_buf", buffer)?;
+                    debug!(
+                        instance_id,
+                        memory = %mem_name,
+                        len_bytes = data.len(),
+                        elapsed_ms = started.elapsed().as_millis(),
+                        "wasm: get memory buffer"
+                    );
                     Ok(len)
                 },
             ),
