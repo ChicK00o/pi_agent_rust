@@ -570,17 +570,13 @@ impl SessionStoreV2 {
                     "cyclic parent chain detected while reading active path at entry_id={entry_id}"
                 )));
             }
-            let row = id_to_row.get(entry_id.as_str());
-            let row = match row {
-                Some(r) => *r,
-                None => {
-                    if frames.is_empty() {
-                        break;
-                    }
-                    return Err(Error::session(format!(
-                        "missing parent entry detected while reading active path at entry_id={entry_id}"
-                    )));
+            let Some(&row) = id_to_row.get(entry_id.as_str()) else {
+                if frames.is_empty() {
+                    break;
                 }
+                return Err(Error::session(format!(
+                    "missing parent entry detected while reading active path at entry_id={entry_id}"
+                )));
             };
             match reader.read_frame(row)? {
                 Some(frame) => {

@@ -18,6 +18,17 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+fn finish_auth_task<T, E>(
+    handle: std::thread::JoinHandle<()>,
+    recv_result: std::result::Result<Result<T>, E>,
+    cancelled_message: &'static str,
+) -> Result<T> {
+    if let Err(panic_payload) = handle.join() {
+        std::panic::resume_unwind(panic_payload);
+    }
+    recv_result.map_err(|_| Error::auth(cancelled_message.to_string()))?
+}
+
 const ANTHROPIC_OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const ANTHROPIC_OAUTH_AUTHORIZE_URL: &str = "https://claude.ai/oauth/authorize";
 const ANTHROPIC_OAUTH_TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
@@ -240,16 +251,15 @@ impl AuthStorage {
     /// Load auth.json asynchronously (creates empty if missing).
     pub async fn load_async(path: PathBuf) -> Result<Self> {
         let (tx, rx) = oneshot::channel();
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             let res = Self::load(path);
             let cx = AgentCx::for_request();
             let _ = tx.send(cx.cx(), res);
         });
 
         let cx = AgentCx::for_request();
-        rx.recv(cx.cx())
-            .await
-            .map_err(|_| Error::auth("Load task cancelled".to_string()))?
+        let recv_result = rx.recv(cx.cx()).await;
+        finish_auth_task(handle, recv_result, "Load task cancelled")
     }
 
     /// Persist auth.json (atomic write + permissions).
@@ -268,16 +278,15 @@ impl AuthStorage {
         let (tx, rx) = oneshot::channel();
         let path = self.path.clone();
 
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             let res = Self::save_data_sync(&path, &data);
             let cx = AgentCx::for_request();
             let _ = tx.send(cx.cx(), res);
         });
 
         let cx = AgentCx::for_request();
-        rx.recv(cx.cx())
-            .await
-            .map_err(|_| Error::auth("Save task cancelled".to_string()))?
+        let recv_result = rx.recv(cx.cx()).await;
+        finish_auth_task(handle, recv_result, "Save task cancelled")
     }
 
     fn save_data_sync(path: &Path, data: &str) -> Result<()> {
@@ -3567,6 +3576,45 @@ mod tests {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .to_string()
+    }
+
+    #[test]
+    fn test_finish_auth_task_propagates_panic_before_cancellation() {
+        let handle = std::thread::spawn(|| -> () {
+            panic!("auth worker panic");
+        });
+
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _: Result<()> = finish_auth_task(handle, Err(()), "Load task cancelled");
+        }));
+
+        assert!(
+            panic.is_err(),
+            "worker panic should not be masked as cancellation"
+        );
+    }
+
+    #[test]
+    fn test_finish_auth_task_maps_nonpanic_cancellation_to_auth_error() {
+        let handle = std::thread::spawn(|| {});
+
+        let err =
+            finish_auth_task::<(), _>(handle, Err(()), "Load task cancelled").expect_err("error");
+
+        assert!(
+            err.to_string().contains("Load task cancelled"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_finish_auth_task_returns_success_payload() {
+        let handle = std::thread::spawn(|| {});
+
+        let value =
+            finish_auth_task::<usize, ()>(handle, Ok(Ok(7usize)), "task cancelled").unwrap();
+
+        assert_eq!(value, 7);
     }
 
     #[allow(clippy::needless_pass_by_value)]

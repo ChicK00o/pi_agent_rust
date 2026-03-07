@@ -875,7 +875,7 @@ impl Session {
         let cwd_display = cwd.display().to_string();
         let (tx, rx) = oneshot::channel();
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             let entries: Vec<SessionPickEntry> = SessionIndex::for_sessions_root(&base_dir_clone)
                 .list_sessions(Some(&cwd_display))
                 .map(|list| {
@@ -885,11 +885,14 @@ impl Session {
                 })
                 .unwrap_or_default();
             let cx = AgentCx::for_request();
-            let _ = tx.send(cx.cx(), entries);
+            let _ = tx.send(cx.cx(), Ok(entries));
         });
 
         let cx = AgentCx::for_request();
-        let entries = rx.recv(cx.cx()).await.unwrap_or_default();
+        let recv_result = rx.recv(cx.cx()).await;
+        let entries =
+            finish_worker_result(handle, recv_result, "Session picker index task cancelled")
+                .unwrap_or_default();
 
         let scanned = scan_sessions_on_disk(&project_session_dir, entries.clone()).await?;
         let mut by_path: HashMap<PathBuf, SessionPickEntry> = HashMap::new();
@@ -1306,7 +1309,7 @@ impl Session {
         let cwd_display_clone = cwd_display.clone();
         let (tx, rx) = oneshot::channel();
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             let index = SessionIndex::for_sessions_root(&base_dir_clone);
             let mut indexed_sessions: Vec<SessionPickEntry> = index
                 .list_sessions(Some(&cwd_display_clone))
@@ -1328,11 +1331,14 @@ impl Session {
                     .unwrap_or_default();
             }
             let cx = AgentCx::for_request();
-            let _ = tx.send(cx.cx(), indexed_sessions);
+            let _ = tx.send(cx.cx(), Ok(indexed_sessions));
         });
 
         let cx = AgentCx::for_request();
-        let indexed_sessions = rx.recv(cx.cx()).await.unwrap_or_default();
+        let recv_result = rx.recv(cx.cx()).await;
+        let indexed_sessions =
+            finish_worker_result(handle, recv_result, "Recent session index task cancelled")
+                .unwrap_or_default();
 
         let scanned = scan_sessions_on_disk(&project_session_dir, indexed_sessions.clone()).await?;
 
@@ -1664,7 +1670,7 @@ impl Session {
                     let recv_result = rx.recv(cx.cx()).await;
 
                     match finish_jsonl_worker_result(handle, recv_result, "Save task cancelled") {
-                        Ok(_) => {
+                        Ok(()) => {
                             // Keep derived caches as-is: save path does not mutate entry ordering/content.
                             self.persisted_entry_count
                                 .store(self.entries.len(), Ordering::SeqCst);

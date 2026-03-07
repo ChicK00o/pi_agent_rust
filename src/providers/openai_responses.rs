@@ -597,7 +597,7 @@ where
             return;
         }
 
-        block.text.clone_from(&text);
+        block.text = text;
     }
 
     fn apply_reasoning_snapshot(
@@ -629,7 +629,7 @@ where
             return;
         }
 
-        block.thinking.clone_from(&text);
+        block.thinking = text;
     }
 
     #[allow(clippy::too_many_lines)]
