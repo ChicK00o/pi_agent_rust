@@ -271,13 +271,26 @@ impl Theme {
     }
 
     /// Load a theme by name using explicit roots.
+    ///
+    /// Project themes take precedence over global themes with the same name,
+    /// consistent with the project-over-global convention used elsewhere
+    /// (config, extension policies, resources).
     pub fn load_by_name_with_roots(name: &str, roots: &ThemeRoots) -> Result<Self> {
         let name = name.trim();
         if name.is_empty() {
             return Err(Error::validation("Theme name is empty"));
         }
 
-        for path in Self::discover_themes_with_roots(roots) {
+        // Search project themes first so they override global themes.
+        for path in glob_json(&roots.project_dir.join("themes")) {
+            if let Ok(theme) = Self::load(&path) {
+                if theme.name.eq_ignore_ascii_case(name) {
+                    return Ok(theme);
+                }
+            }
+        }
+
+        for path in glob_json(&roots.global_dir.join("themes")) {
             if let Ok(theme) = Self::load(&path) {
                 if theme.name.eq_ignore_ascii_case(name) {
                     return Ok(theme);
@@ -945,6 +958,39 @@ mod tests {
         };
         let loaded = Theme::load_by_name_with_roots("mycustom", &roots).unwrap();
         assert_eq!(loaded.name, "mycustom");
+    }
+
+    #[test]
+    fn load_by_name_project_overrides_global() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let global_themes = dir.path().join("global/themes");
+        let project_themes = dir.path().join("project/themes");
+        fs::create_dir_all(&global_themes).unwrap();
+        fs::create_dir_all(&project_themes).unwrap();
+
+        // Global theme with accent "#111111"
+        let mut global_theme = Theme::dark();
+        global_theme.name = "shared".to_string();
+        global_theme.colors.accent = "#111111".to_string();
+        let json = serde_json::to_string_pretty(&global_theme).unwrap();
+        fs::write(global_themes.join("shared.json"), json).unwrap();
+
+        // Project theme with same name but accent "#222222"
+        let mut project_theme = Theme::dark();
+        project_theme.name = "shared".to_string();
+        project_theme.colors.accent = "#222222".to_string();
+        let json = serde_json::to_string_pretty(&project_theme).unwrap();
+        fs::write(project_themes.join("shared.json"), json).unwrap();
+
+        let roots = ThemeRoots {
+            global_dir: dir.path().join("global"),
+            project_dir: dir.path().join("project"),
+        };
+        let loaded = Theme::load_by_name_with_roots("shared", &roots).unwrap();
+        assert_eq!(
+            loaded.colors.accent, "#222222",
+            "project theme should override global theme with the same name"
+        );
     }
 
     // ── tui_styles and glamour_style_config smoke tests ─────────────
