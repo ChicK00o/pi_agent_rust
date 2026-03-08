@@ -1252,7 +1252,7 @@ const fn bool_label(value: bool) -> &'static str {
 }
 
 /// Run the interactive mode.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::large_stack_frames)]
 pub async fn run_interactive(
     agent: Agent,
     session: Arc<Mutex<Session>>,

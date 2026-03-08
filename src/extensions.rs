@@ -20066,7 +20066,7 @@ async fn pump_js_runtime_once(runtime: &PiJsRuntime, host: &JsRuntimeHost) -> Re
         let batch_start = Instant::now();
         let mut completions = Vec::with_capacity(total);
 
-        for (group, decision) in plan.groups.into_iter().zip(plan.decisions.into_iter()) {
+        for (group, decision) in plan.groups.into_iter().zip(plan.decisions) {
             tracing::debug!(
                 event = "pijs.amac.group_dispatch",
                 group_key = ?group.key,
