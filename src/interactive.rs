@@ -32,6 +32,8 @@ use serde_json::{Value, json};
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
+use std::fs::OpenOptions;
+use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -145,9 +147,38 @@ use self::tree::{
 /// inside the visible terminal area instead of being clipped below the fold.
 const RESERVED_ROWS: usize = 16;
 const CONVERSATION_TOP_ROW: usize = 4;
+const MOUSE_DEBUG_ENV: &str = "PI_MOUSE_DEBUG";
+const MOUSE_DEBUG_FILE_ENV: &str = "PI_MOUSE_DEBUG_FILE";
 
 fn overlay_max_visible(term_height: usize) -> usize {
     term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
+}
+
+fn mouse_debug_enabled() -> bool {
+    std::env::var_os(MOUSE_DEBUG_ENV).is_some_and(|value| value != "0")
+}
+
+fn mouse_debug_file_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os(MOUSE_DEBUG_FILE_ENV) {
+        return Some(PathBuf::from(path));
+    }
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    Some(dir.join("pi-mouse-debug.log"))
+}
+
+fn mouse_debug_log(line: &str) {
+    if !mouse_debug_enabled() {
+        return;
+    }
+    let Some(path) = mouse_debug_file_path() else {
+        return;
+    };
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
+        return;
+    };
+    let ts = Utc::now().to_rfc3339();
+    let _ = writeln!(file, "[{ts}] {line}");
 }
 
 // ============================================================================
@@ -1319,6 +1350,7 @@ pub async fn run_interactive(
         conversation_from_session(&guard)
     };
 
+    let cwd_display = cwd.display().to_string();
     let app = PiApp::new(
         agent,
         session,
@@ -1338,6 +1370,10 @@ pub async fn run_interactive(
         messages,
         usage,
     );
+
+    mouse_debug_log(&format!(
+        "interactive-start alt_screen=1 mouse_all_motion=1 cwd={cwd_display}"
+    ));
 
     Program::new(app)
         .with_alt_screen()
@@ -2018,7 +2054,18 @@ impl PiApp {
                 mouse.button,
                 MouseButton::WheelDown | MouseButton::WheelRight
             );
+            mouse_debug_log(&format!(
+                "mouse-event action={:?} button={:?} x={} y={} follow_tail={} vp_offset={}",
+                mouse.action,
+                mouse.button,
+                mouse.x,
+                mouse.y,
+                self.follow_stream_tail,
+                self.conversation_viewport.y_offset()
+            ));
+
             if !(scroll_up || scroll_down) {
+                mouse_debug_log("mouse-event ignored: non-wheel");
                 return None;
             }
 
@@ -2028,6 +2075,7 @@ impl PiApp {
                 } else {
                     selector.select_next();
                 }
+                mouse_debug_log("mouse-wheel consumed by model-selector");
                 return None;
             }
             if let Some(picker) = self.branch_picker.as_mut() {
@@ -2036,6 +2084,7 @@ impl PiApp {
                 } else {
                     picker.select_next();
                 }
+                mouse_debug_log("mouse-wheel consumed by branch-picker");
                 return None;
             }
             if let Some(picker) = self.theme_picker.as_mut() {
@@ -2044,6 +2093,7 @@ impl PiApp {
                 } else {
                     picker.select_next();
                 }
+                mouse_debug_log("mouse-wheel consumed by theme-picker");
                 return None;
             }
             if let Some(settings_ui) = self.settings_ui.as_mut() {
@@ -2052,6 +2102,7 @@ impl PiApp {
                 } else {
                     settings_ui.select_next();
                 }
+                mouse_debug_log("mouse-wheel consumed by settings-ui");
                 return None;
             }
             if let Some(picker) = self.session_picker.as_mut() {
@@ -2060,6 +2111,7 @@ impl PiApp {
                 } else {
                     picker.select_next();
                 }
+                mouse_debug_log("mouse-wheel consumed by session-picker");
                 return None;
             }
             if self.autocomplete.open && !self.autocomplete.items.is_empty() {
@@ -2068,6 +2120,7 @@ impl PiApp {
                 } else {
                     self.autocomplete.select_next();
                 }
+                mouse_debug_log("mouse-wheel consumed by autocomplete");
                 return None;
             }
 
@@ -2075,6 +2128,9 @@ impl PiApp {
             let mouse_row = usize::from(mouse.y);
             let conversation_bottom_row = CONVERSATION_TOP_ROW.saturating_add(effective);
             if mouse_row < CONVERSATION_TOP_ROW || mouse_row >= conversation_bottom_row {
+                mouse_debug_log(&format!(
+                    "mouse-wheel ignored: outside conversation-area top={CONVERSATION_TOP_ROW} bottom={conversation_bottom_row} y={mouse_row}"
+                ));
                 return None;
             }
 
@@ -2091,12 +2147,21 @@ impl PiApp {
                 saved_offset.saturating_add(wheel_step)
             };
             self.conversation_viewport.set_y_offset(target_offset);
+            let new_offset = self.conversation_viewport.y_offset();
 
             if self.is_at_bottom() {
                 self.follow_stream_tail = true;
-            } else if self.conversation_viewport.y_offset() != saved_offset {
+            } else if new_offset != saved_offset {
                 self.follow_stream_tail = false;
             }
+            mouse_debug_log(&format!(
+                "mouse-wheel applied dir={} step={} offset:{}->{} follow_tail={}",
+                if scroll_up { "up" } else { "down" },
+                wheel_step,
+                saved_offset,
+                new_offset,
+                self.follow_stream_tail
+            ));
             return None;
         }
 
