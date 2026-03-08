@@ -144,7 +144,7 @@ use self::tree::{
 /// viewport/status rows. We reserve a conservative baseline so picker rows stay
 /// inside the visible terminal area instead of being clipped below the fold.
 fn overlay_max_visible(term_height: usize) -> usize {
-    const RESERVED_ROWS: usize = 14;
+    const RESERVED_ROWS: usize = 16;
     term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
 }
 
@@ -958,6 +958,19 @@ impl PiApp {
         if let Some(ref picker) = self.branch_picker {
             let visible = picker.branches.len().min(picker.max_visible);
             chrome += 3 + visible + 2; // title + header + separator + items + help + blank
+        }
+
+        // Safety margin for escape-sequence styling + occasional line-wrap edge
+        // cases when multiple overlays/tool/status rows stack in the same frame.
+        let any_overlay = self.session_picker.is_some()
+            || self.settings_ui.is_some()
+            || self.theme_picker.is_some()
+            || self.capability_prompt.is_some()
+            || self.extension_custom_overlay.is_some()
+            || self.branch_picker.is_some()
+            || self.model_selector.is_some();
+        if any_overlay {
+            chrome += 2;
         }
 
         // Input area vs processing spinner.
@@ -2074,6 +2087,8 @@ impl PiApp {
                 match key.key_type {
                     KeyType::Up => picker.select_prev(),
                     KeyType::Down => picker.select_next(),
+                    KeyType::PgUp => picker.select_page_up(),
+                    KeyType::PgDown => picker.select_page_down(),
                     KeyType::Runes if key.runes == ['k'] => picker.select_prev(),
                     KeyType::Runes if key.runes == ['j'] => picker.select_next(),
                     KeyType::Enter => {
@@ -2153,6 +2168,16 @@ impl PiApp {
                     }
                     KeyType::Runes if key.runes == ['j'] => {
                         settings_ui.select_next();
+                        self.settings_ui = Some(settings_ui);
+                        return None;
+                    }
+                    KeyType::PgUp => {
+                        settings_ui.select_page_up();
+                        self.settings_ui = Some(settings_ui);
+                        return None;
+                    }
+                    KeyType::PgDown => {
+                        settings_ui.select_page_down();
                         self.settings_ui = Some(settings_ui);
                         return None;
                     }
@@ -2249,6 +2274,14 @@ impl PiApp {
                     }
                     KeyType::Down => {
                         picker.select_next();
+                        return None;
+                    }
+                    KeyType::PgUp => {
+                        picker.select_page_up();
+                        return None;
+                    }
+                    KeyType::PgDown => {
+                        picker.select_page_down();
                         return None;
                     }
                     KeyType::Runes if key.runes == ['k'] && !picker.has_query() => {

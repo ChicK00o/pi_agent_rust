@@ -1953,6 +1953,62 @@ mod stream_delta_batcher_tests {
     }
 
     #[test]
+    fn overlay_states_reduce_conversation_height_budget() {
+        let mut app = build_test_app();
+        app.term_height = 24;
+        let baseline = app.view_effective_conversation_height();
+
+        app.session_picker = Some(SessionPickerOverlay::new(Vec::new()));
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "session picker rows must shrink conversation viewport budget"
+        );
+        app.session_picker = None;
+
+        app.settings_ui = Some(SettingsUiState::new());
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "settings rows must shrink conversation viewport budget"
+        );
+        app.settings_ui = None;
+
+        app.theme_picker = Some(ThemePickerOverlay::new(Path::new(".")));
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "theme picker rows must shrink conversation viewport budget"
+        );
+        app.theme_picker = None;
+
+        app.branch_picker = Some(BranchPickerOverlay::new(Vec::new()));
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "branch picker rows must shrink conversation viewport budget"
+        );
+        app.branch_picker = None;
+
+        app.autocomplete.open = true;
+        app.autocomplete.max_visible = 15;
+        app.autocomplete.items = vec![
+            AutocompleteItem {
+                kind: AutocompleteItemKind::Path,
+                label: "alpha".to_string(),
+                insert: "alpha".to_string(),
+                description: Some("item one".to_string()),
+            },
+            AutocompleteItem {
+                kind: AutocompleteItemKind::Path,
+                label: "beta".to_string(),
+                insert: "beta".to_string(),
+                description: Some("item two".to_string()),
+            },
+        ];
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "autocomplete dropdown must shrink conversation viewport budget"
+        );
+    }
+
+    #[test]
     fn mouse_wheel_updates_conversation_offset_and_follow_tail() {
         let mut app = build_test_app();
         app.term_height = 18;

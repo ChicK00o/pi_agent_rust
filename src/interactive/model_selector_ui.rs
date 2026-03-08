@@ -1,6 +1,6 @@
 use super::commands::{model_entry_matches, resolve_model_key_from_default_auth};
-use crate::models::model_requires_configured_credential;
 use super::*;
+use crate::models::model_requires_configured_credential;
 
 impl PiApp {
     fn normalize_model_key(entry: &ModelEntry) -> (String, String) {
@@ -326,7 +326,7 @@ impl PiApp {
             "\n  {}",
             self.styles
                 .muted_italic
-                .render("↑/↓/j/k: navigate  Enter: select  Esc: cancel  * = current")
+                .render("↑/↓/j/k/PgUp/PgDn: navigate  Enter: select  Esc: cancel  * = current")
         );
         output
     }
