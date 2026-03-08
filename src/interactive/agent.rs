@@ -2107,6 +2107,54 @@ mod stream_delta_batcher_tests {
     }
 
     #[test]
+    fn mouse_wheel_motion_events_scroll_like_press_events() {
+        let mut app = build_test_app();
+
+        let mut models = Vec::new();
+        for idx in 0..4 {
+            models.push(model_entry("openai", &format!("gpt-4o-mini-{idx}")));
+        }
+        app.model_selector = Some(crate::model_selector::ModelSelectorOverlay::new(&models));
+
+        let wheel_motion = bubbletea::MouseMsg {
+            action: bubbletea::MouseAction::Motion,
+            button: bubbletea::MouseButton::WheelDown,
+            ..bubbletea::MouseMsg::default()
+        };
+        let _ = app.update(Message::new(wheel_motion));
+        assert_eq!(
+            app.model_selector
+                .as_ref()
+                .expect("selector active")
+                .selected_index(),
+            1
+        );
+
+        app.model_selector = None;
+        app.term_height = 18;
+        for idx in 0..120 {
+            app.messages.push(ConversationMessage::new(
+                MessageRole::Assistant,
+                format!("assistant line {idx}"),
+                None,
+            ));
+        }
+        app.scroll_to_bottom();
+        let bottom_offset = app.conversation_viewport.y_offset();
+
+        let wheel_up_motion = bubbletea::MouseMsg {
+            action: bubbletea::MouseAction::Motion,
+            button: bubbletea::MouseButton::WheelUp,
+            ..bubbletea::MouseMsg::default()
+        };
+        let _ = app.update(Message::new(wheel_up_motion));
+        assert!(
+            app.conversation_viewport.y_offset() < bottom_offset,
+            "wheel motion should still move conversation viewport"
+        );
+    }
+
+    #[test]
     fn mouse_wheel_updates_conversation_offset_and_follow_tail() {
         let mut app = build_test_app();
         app.term_height = 18;

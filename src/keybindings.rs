@@ -1350,8 +1350,14 @@ impl KeyBindings {
         );
         m.insert(AppAction::JumpForward, vec![KeyBinding::ctrl("]")]);
         m.insert(AppAction::JumpBackward, vec![KeyBinding::ctrl_alt("]")]);
-        m.insert(AppAction::PageUp, vec![KeyBinding::plain("pageup")]);
-        m.insert(AppAction::PageDown, vec![KeyBinding::plain("pagedown")]);
+        m.insert(
+            AppAction::PageUp,
+            vec![KeyBinding::plain("pageup"), KeyBinding::shift("up")],
+        );
+        m.insert(
+            AppAction::PageDown,
+            vec![KeyBinding::plain("pagedown"), KeyBinding::shift("down")],
+        );
 
         // Deletion
         m.insert(
@@ -1520,6 +1526,14 @@ mod tests {
         let cursor_left = bindings.get_bindings(AppAction::CursorLeft);
         assert!(cursor_left.contains(&KeyBinding::plain("left")));
         assert!(cursor_left.contains(&KeyBinding::ctrl("b")));
+
+        // Check tmux/alternate-scroll fallbacks map to page scrolling
+        let page_up = bindings.get_bindings(AppAction::PageUp);
+        assert!(page_up.contains(&KeyBinding::plain("pageup")));
+        assert!(page_up.contains(&KeyBinding::shift("up")));
+        let page_down = bindings.get_bindings(AppAction::PageDown);
+        assert!(page_down.contains(&KeyBinding::plain("pagedown")));
+        assert!(page_down.contains(&KeyBinding::shift("down")));
 
         // Check ctrl+c maps to multiple actions (context-dependent)
         let ctrl_c = KeyBinding::ctrl("c");

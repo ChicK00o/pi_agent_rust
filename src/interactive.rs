@@ -20,8 +20,8 @@ use bubbles::spinner::{SpinnerModel, TickMsg as SpinnerTickMsg, spinners};
 use bubbles::textarea::TextArea;
 use bubbles::viewport::Viewport;
 use bubbletea::{
-    Cmd, KeyMsg, KeyType, Message, Model as BubbleteaModel, MouseAction, MouseButton, MouseMsg,
-    Program, WindowSizeMsg, batch, quit, sequence,
+    Cmd, KeyMsg, KeyType, Message, Model as BubbleteaModel, MouseButton, MouseMsg, Program,
+    WindowSizeMsg, batch, quit, sequence,
 };
 use chrono::Utc;
 use crossterm::{cursor, terminal};
@@ -2011,10 +2011,6 @@ impl PiApp {
         }
 
         if let Some(mouse) = msg.downcast_ref::<MouseMsg>() {
-            if mouse.action != MouseAction::Press {
-                return None;
-            }
-
             let scroll_up = matches!(mouse.button, MouseButton::WheelUp | MouseButton::WheelLeft);
             let scroll_down = matches!(
                 mouse.button,
@@ -2079,7 +2075,14 @@ impl PiApp {
             self.conversation_viewport.height = effective;
             self.conversation_viewport.set_content(content.trim_end());
             self.conversation_viewport.set_y_offset(saved_offset);
-            self.conversation_viewport.update(&msg);
+
+            let wheel_step = self.conversation_viewport.mouse_wheel_delta.max(1);
+            let target_offset = if scroll_up {
+                saved_offset.saturating_sub(wheel_step)
+            } else {
+                saved_offset.saturating_add(wheel_step)
+            };
+            self.conversation_viewport.set_y_offset(target_offset);
 
             if self.is_at_bottom() {
                 self.follow_stream_tail = true;
