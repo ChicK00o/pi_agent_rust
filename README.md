@@ -1501,7 +1501,7 @@ The interactive mode uses the **Elm Architecture** (Model-Update-View) via the `
 
 **Back-buffer ownership (tmux/terminal)**: In interactive mode, Pi runs in the terminal alternate screen and owns the in-app conversation back buffer/viewport. This means mouse wheel scrolling is handled by Pi (not shell scrollback). Wheel input is consumed in the conversation render region and moves exactly one line per wheel tick for deterministic behavior; `PgUp`/`PgDn` and `Shift+Up`/`Shift+Down` remain keyboard fallbacks.
 
-**Mouse debug log (tmux diagnostics)**: Set `PI_MOUSE_DEBUG=1` to emit per-event diagnostics. By default logs are written next to the running executable as `pi-mouse-debug.log` (for release builds, that is usually beside the `pi` binary). Override location with `PI_MOUSE_DEBUG_FILE=/abs/path/to/log` if needed.
+**Mouse debug log (tmux diagnostics)**: Set `PI_MOUSE_DEBUG=1` to emit per-event diagnostics. By default logs are written next to the running executable as `pi-mouse-debug.log` (for release builds, that is usually beside the `pi` binary). If that directory is not writable, Pi automatically falls back to `${TMPDIR:-/tmp}/pi-mouse-debug-$USER.log`. Override location with `PI_MOUSE_DEBUG_FILE=/abs/path/to/log` if needed.
 
 **Overlay system**: Modal UIs (model selector, session picker, branch navigator, extension capability prompts) stack on top of the main conversation view. Each overlay captures keyboard input until dismissed. Only the topmost active overlay receives events.
 

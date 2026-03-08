@@ -167,16 +167,26 @@ fn mouse_debug_file_path() -> Option<PathBuf> {
     Some(dir.join("pi-mouse-debug.log"))
 }
 
+fn mouse_debug_fallback_path() -> PathBuf {
+    let user = std::env::var("USER").unwrap_or_else(|_| "agent".to_string());
+    std::env::temp_dir().join(format!("pi-mouse-debug-{user}.log"))
+}
+
 fn mouse_debug_log(line: &str) {
     if !mouse_debug_enabled() {
         return;
     }
-    let Some(path) = mouse_debug_file_path() else {
+
+    let mut path = mouse_debug_file_path().unwrap_or_else(mouse_debug_fallback_path);
+    let mut file = OpenOptions::new().create(true).append(true).open(&path);
+    if file.is_err() {
+        path = mouse_debug_fallback_path();
+        file = OpenOptions::new().create(true).append(true).open(&path);
+    }
+    let Ok(mut file) = file else {
         return;
     };
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-        return;
-    };
+
     let ts = Utc::now().to_rfc3339();
     let _ = writeln!(file, "[{ts}] {line}");
 }
