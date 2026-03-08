@@ -589,10 +589,12 @@ fn convert_user_message(message: &crate::model::UserMessage) -> Option<BedrockMe
         UserContent::Blocks(blocks) => {
             for block in blocks {
                 match block {
-                    ContentBlock::Text(text) if !text.text.trim().is_empty() => {
-                        content.push(BedrockContent::Text {
-                            text: text.text.clone(),
-                        });
+                    ContentBlock::Text(text) => {
+                        if !text.text.trim().is_empty() {
+                            content.push(BedrockContent::Text {
+                                text: text.text.clone(),
+                            });
+                        }
                     }
                     ContentBlock::Image(img) => {
                         let format = img
@@ -630,10 +632,12 @@ fn convert_assistant_message(message: &AssistantMessage) -> Option<BedrockMessag
     let mut content = Vec::new();
     for block in &message.content {
         match block {
-            ContentBlock::Text(text) if !text.text.trim().is_empty() => {
-                content.push(BedrockContent::Text {
-                    text: text.text.clone(),
-                });
+            ContentBlock::Text(text) => {
+                if !text.text.trim().is_empty() {
+                    content.push(BedrockContent::Text {
+                        text: text.text.clone(),
+                    });
+                }
             }
             ContentBlock::ToolCall(tool_call) => {
                 content.push(BedrockContent::ToolUse {
@@ -663,10 +667,12 @@ fn convert_tool_result_message(message: &ToolResultMessage) -> BedrockMessage {
 
     for block in &message.content {
         match block {
-            ContentBlock::Text(text) if !text.text.is_empty() => {
-                contents.push(BedrockToolResultContent::Text {
-                    text: text.text.clone(),
-                });
+            ContentBlock::Text(text) => {
+                if !text.text.is_empty() {
+                    contents.push(BedrockToolResultContent::Text {
+                        text: text.text.clone(),
+                    });
+                }
             }
             ContentBlock::Image(img) => {
                 let format = img

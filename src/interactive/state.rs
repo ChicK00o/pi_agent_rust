@@ -269,22 +269,6 @@ impl SessionPickerOverlay {
         }
     }
 
-    pub(super) fn select_page_down(&mut self) {
-        if self.sessions.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = (self.selected + step).min(self.sessions.len().saturating_sub(1));
-    }
-
-    pub(super) fn select_page_up(&mut self) {
-        if self.sessions.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = self.selected.saturating_sub(step);
-    }
-
     pub(super) fn selected_session(&self) -> Option<&SessionMeta> {
         self.sessions.get(self.selected)
     }
@@ -448,22 +432,6 @@ impl ThemePickerOverlay {
         }
     }
 
-    pub(super) fn select_page_down(&mut self) {
-        if self.items.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = (self.selected + step).min(self.items.len().saturating_sub(1));
-    }
-
-    pub(super) fn select_page_up(&mut self) {
-        if self.items.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = self.selected.saturating_sub(step);
-    }
-
     pub(super) const fn scroll_offset(&self) -> usize {
         if self.selected < self.max_visible {
             0
@@ -519,22 +487,6 @@ impl SettingsUiState {
                 .checked_sub(1)
                 .unwrap_or(self.entries.len() - 1);
         }
-    }
-
-    pub(super) fn select_page_down(&mut self) {
-        if self.entries.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = (self.selected + step).min(self.entries.len().saturating_sub(1));
-    }
-
-    pub(super) fn select_page_up(&mut self) {
-        if self.entries.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = self.selected.saturating_sub(step);
     }
 
     pub(super) fn selected_entry(&self) -> Option<SettingsUiEntry> {
@@ -701,22 +653,6 @@ impl BranchPickerOverlay {
                 .checked_sub(1)
                 .unwrap_or(self.branches.len() - 1);
         }
-    }
-
-    pub(super) fn select_page_down(&mut self) {
-        if self.branches.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = (self.selected + step).min(self.branches.len().saturating_sub(1));
-    }
-
-    pub(super) fn select_page_up(&mut self) {
-        if self.branches.is_empty() {
-            return;
-        }
-        let step = self.max_visible.saturating_sub(1).max(1);
-        self.selected = self.selected.saturating_sub(step);
     }
 
     pub(super) const fn scroll_offset(&self) -> usize {
@@ -1110,44 +1046,5 @@ mod tests {
     fn settings_ui_includes_default_permissive_toggle() {
         let state = SettingsUiState::new();
         assert!(state.entries.contains(&SettingsUiEntry::DefaultPermissive));
-    }
-
-    #[test]
-    fn settings_page_navigation_moves_by_visible_window() {
-        let mut state = SettingsUiState::new();
-        state.max_visible = 4;
-        state.select_page_down();
-        assert_eq!(state.selected, 3);
-        state.select_page_down();
-        assert_eq!(state.selected, 6);
-        state.select_page_up();
-        assert_eq!(state.selected, 3);
-    }
-
-    #[test]
-    fn session_picker_page_navigation_moves_by_visible_window() {
-        use crate::session_index::SessionMeta;
-
-        let sessions = (0u32..10)
-            .map(|idx| SessionMeta {
-                path: format!("{idx}.jsonl"),
-                id: format!("id-{idx}"),
-                cwd: ".".to_string(),
-                timestamp: format!("2026-01-01T00:00:{idx:02}Z"),
-                message_count: u64::from(idx),
-                last_modified_ms: i64::from(idx),
-                size_bytes: 1,
-                name: None,
-            })
-            .collect::<Vec<_>>();
-
-        let mut picker = SessionPickerOverlay::new(sessions);
-        picker.max_visible = 5;
-        picker.select_page_down();
-        assert_eq!(picker.selected, 4);
-        picker.select_page_down();
-        assert_eq!(picker.selected, 8);
-        picker.select_page_up();
-        assert_eq!(picker.selected, 4);
     }
 }

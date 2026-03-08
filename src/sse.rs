@@ -103,7 +103,9 @@ impl SseParser {
             "response.function_call_arguments.delta" => {
                 Cow::Borrowed("response.function_call_arguments.delta")
             }
-            "response.reasoning_text.delta" => Cow::Borrowed("response.reasoning_text.delta"),
+            "response.reasoning_text.delta" => {
+                Cow::Borrowed("response.reasoning_text.delta")
+            }
             "response.reasoning_text.done" => Cow::Borrowed("response.reasoning_text.done"),
             "response.reasoning_summary_text.delta" => {
                 Cow::Borrowed("response.reasoning_summary_text.delta")
@@ -158,8 +160,10 @@ impl SseParser {
             match field {
                 "event" => current.event = Self::intern_event_type(value),
                 "data" => Self::append_data_line(current, value, has_data, max_event_data_bytes),
-                "id" if !value.contains('\0') => {
-                    current.id = Some(value.to_string());
+                "id" => {
+                    if !value.contains('\0') {
+                        current.id = Some(value.to_string());
+                    }
                 }
                 "retry" => current.retry = value.parse().ok(),
                 _ => {} // Unknown field - ignore

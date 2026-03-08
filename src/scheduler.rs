@@ -2271,9 +2271,11 @@ mod tests {
                     let timer_id = sched.set_timeout(delay_ms);
                     timers.push(timer_id);
                 }
-                1 if !timers.is_empty() => {
-                    let idx = rng.next_usize(timers.len());
-                    let _cancelled = sched.clear_timeout(timers[idx]);
+                1 => {
+                    if !timers.is_empty() {
+                        let idx = rng.next_usize(timers.len());
+                        let _cancelled = sched.clear_timeout(timers[idx]);
+                    }
                 }
                 2 => {
                     let call_id = format!("call-{step}-{}", rng.next_u64());

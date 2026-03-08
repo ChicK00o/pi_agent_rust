@@ -896,7 +896,7 @@ impl Session {
 
         let scanned = scan_sessions_on_disk(&project_session_dir, entries.clone()).await?;
         let mut by_path: HashMap<PathBuf, SessionPickEntry> = HashMap::new();
-        for entry in entries.into_iter().chain(scanned) {
+        for entry in entries.into_iter().chain(scanned.into_iter()) {
             by_path
                 .entry(entry.path.clone())
                 .and_modify(|existing| {
@@ -1343,7 +1343,7 @@ impl Session {
         let scanned = scan_sessions_on_disk(&project_session_dir, indexed_sessions.clone()).await?;
 
         let mut by_path: HashMap<PathBuf, SessionPickEntry> = HashMap::new();
-        for entry in indexed_sessions.into_iter().chain(scanned) {
+        for entry in indexed_sessions.into_iter().chain(scanned.into_iter()) {
             by_path
                 .entry(entry.path.clone())
                 .and_modify(|existing| {
@@ -2824,8 +2824,10 @@ fn load_session_meta_jsonl(path: &Path) -> Result<SessionPickEntry> {
         if let Ok(entry) = serde_json::from_str::<PartialEntry>(&line_content) {
             match entry.r#type.as_str() {
                 "message" => message_count += 1,
-                "session_info" if entry.name.is_some() => {
-                    name = entry.name;
+                "session_info" => {
+                    if entry.name.is_some() {
+                        name = entry.name;
+                    }
                 }
                 _ => {}
             }
@@ -3606,8 +3608,10 @@ fn session_entry_stats(entries: &[SessionEntry]) -> (u64, Option<String>) {
     for entry in entries {
         match entry {
             SessionEntry::Message(_) => message_count += 1,
-            SessionEntry::SessionInfo(info) if info.name.is_some() => {
-                name.clone_from(&info.name);
+            SessionEntry::SessionInfo(info) => {
+                if info.name.is_some() {
+                    name.clone_from(&info.name);
+                }
             }
             _ => {}
         }
@@ -4385,8 +4389,10 @@ fn finalize_loaded_entries(entries: &mut [SessionEntry]) -> LoadFinalization {
         // Stats.
         match entry {
             SessionEntry::Message(_) => message_count += 1,
-            SessionEntry::SessionInfo(info) if info.name.is_some() => {
-                name.clone_from(&info.name);
+            SessionEntry::SessionInfo(info) => {
+                if info.name.is_some() {
+                    name.clone_from(&info.name);
+                }
             }
             _ => {}
         }

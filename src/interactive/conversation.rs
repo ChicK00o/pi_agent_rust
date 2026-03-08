@@ -193,12 +193,14 @@ pub fn conversation_from_session(session: &Session) -> (Vec<ConversationMessage>
             }
             SessionMessage::Custom {
                 content, display, ..
-            } if *display => {
-                messages.push(ConversationMessage::new(
-                    MessageRole::System,
-                    content.clone(),
-                    None,
-                ));
+            } => {
+                if *display {
+                    messages.push(ConversationMessage::new(
+                        MessageRole::System,
+                        content.clone(),
+                        None,
+                    ));
+                }
             }
             _ => {}
         }

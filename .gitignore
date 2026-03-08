@@ -153,7 +153,3 @@ src/bin/test_time.rs
 
 # Codex cargo home (build cache)
 .codex-cargo-home/
-
-# Gas Town (added by gt)
-.runtime/
-.logs/

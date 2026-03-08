@@ -32,8 +32,6 @@ use serde_json::{Value, json};
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
-use std::fs::OpenOptions;
-use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -143,54 +141,16 @@ use self::tree::{
 /// Compute the maximum visible items for overlay pickers (model selector,
 /// session picker, settings, branch picker, etc.) based on the terminal height.
 ///
-/// The overlay list shares vertical budget with header/footer and occasional
-/// viewport/status rows. We reserve a conservative baseline so picker rows stay
-/// inside the visible terminal area instead of being clipped below the fold.
-const RESERVED_ROWS: usize = 16;
+/// The overlay typically needs ~8 rows of chrome: title, search field, divider,
+/// pagination hint, detail line, help footer, and margins.  We reserve that
+/// overhead and clamp the result to `[3, 30]` so the UI stays usable on very
+/// small terminals while allowing taller lists on large ones.
 const CONVERSATION_TOP_ROW: usize = 4;
-const MOUSE_DEBUG_ENV: &str = "PI_MOUSE_DEBUG";
-const MOUSE_DEBUG_FILE_ENV: &str = "PI_MOUSE_DEBUG_FILE";
 const TMUX_WHEEL_OVERRIDE_ENV: &str = "PI_TMUX_WHEEL_OVERRIDE";
 
 fn overlay_max_visible(term_height: usize) -> usize {
-    term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
-}
-
-fn mouse_debug_enabled() -> bool {
-    std::env::var_os(MOUSE_DEBUG_ENV).is_some_and(|value| value != "0")
-}
-
-fn mouse_debug_file_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os(MOUSE_DEBUG_FILE_ENV) {
-        return Some(PathBuf::from(path));
-    }
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    Some(dir.join("pi-mouse-debug.log"))
-}
-
-fn mouse_debug_fallback_path() -> PathBuf {
-    let user = std::env::var("USER").unwrap_or_else(|_| "agent".to_string());
-    std::env::temp_dir().join(format!("pi-mouse-debug-{user}.log"))
-}
-
-fn mouse_debug_log(line: &str) {
-    if !mouse_debug_enabled() {
-        return;
-    }
-
-    let mut path = mouse_debug_file_path().unwrap_or_else(mouse_debug_fallback_path);
-    let mut file = OpenOptions::new().create(true).append(true).open(&path);
-    if file.is_err() {
-        path = mouse_debug_fallback_path();
-        file = OpenOptions::new().create(true).append(true).open(&path);
-    }
-    let Ok(mut file) = file else {
-        return;
-    };
-
-    let ts = Utc::now().to_rfc3339();
-    let _ = writeln!(file, "[{ts}] {line}");
+    const OVERLAY_CHROME_ROWS: usize = 8;
+    term_height.saturating_sub(OVERLAY_CHROME_ROWS).clamp(3, 30)
 }
 
 fn tmux_capture_root_binding(key: &str) -> Option<String> {
@@ -219,11 +179,11 @@ fn tmux_source_line(line: &str) -> bool {
         return false;
     };
     if let Some(stdin) = child.stdin.as_mut() {
-        if stdin.write_all(line.as_bytes()).is_err() {
+        if std::io::Write::write_all(stdin, line.as_bytes()).is_err() {
             let _ = child.wait();
             return false;
         }
-        if stdin.write_all(b"\n").is_err() {
+        if std::io::Write::write_all(stdin, b"\n").is_err() {
             let _ = child.wait();
             return false;
         }
@@ -231,22 +191,35 @@ fn tmux_source_line(line: &str) -> bool {
     child.wait().is_ok_and(|status| status.success())
 }
 
+fn tmux_binding_rhs(line: &str, key: &str) -> Option<String> {
+    let (_, rhs) = line.split_once(key)?;
+    Some(rhs.trim().to_string())
+}
+
 fn tmux_override_wheel_bindings() -> Option<(String, String)> {
     std::env::var_os("TMUX")?;
     if std::env::var_os(TMUX_WHEEL_OVERRIDE_ENV).is_some_and(|value| value == "0") {
-        mouse_debug_log("tmux-wheel-override disabled via PI_TMUX_WHEEL_OVERRIDE=0");
         return None;
     }
+    let pane = std::env::var("TMUX_PANE").ok()?;
+
     let up = tmux_capture_root_binding("WheelUpPane")?;
     let down = tmux_capture_root_binding("WheelDownPane")?;
+    let up_rhs = tmux_binding_rhs(&up, "WheelUpPane")?;
+    let down_rhs = tmux_binding_rhs(&down, "WheelDownPane")?;
 
-    let up_ok = tmux_source_line("bind-key -T root WheelUpPane send-keys -M");
-    let down_ok = tmux_source_line("bind-key -T root WheelDownPane send-keys -M");
+    let up_line = format!(
+        "bind-key -T root WheelUpPane if-shell -F \"#{{==:#{{pane_id}},{pane}}}\" \"send-keys -M\" '{up_rhs}'"
+    );
+    let down_line = format!(
+        "bind-key -T root WheelDownPane if-shell -F \"#{{==:#{{pane_id}},{pane}}}\" \"send-keys -M\" '{down_rhs}'"
+    );
+
+    let up_ok = tmux_source_line(&up_line);
+    let down_ok = tmux_source_line(&down_line);
     if up_ok && down_ok {
-        mouse_debug_log("tmux-wheel-override enabled (runtime, temporary)");
         Some((up, down))
     } else {
-        mouse_debug_log("tmux-wheel-override failed to enable");
         None
     }
 }
@@ -268,13 +241,8 @@ impl TmuxWheelOverrideGuard {
 
 impl Drop for TmuxWheelOverrideGuard {
     fn drop(&mut self) {
-        let up_ok = tmux_source_line(&self.original_up);
-        let down_ok = tmux_source_line(&self.original_down);
-        if up_ok && down_ok {
-            mouse_debug_log("tmux-wheel-override restored original bindings");
-        } else {
-            mouse_debug_log("tmux-wheel-override failed to restore original bindings");
-        }
+        let _ = tmux_source_line(&self.original_up);
+        let _ = tmux_source_line(&self.original_down);
     }
 }
 
@@ -981,67 +949,6 @@ impl PiApp {
         4 + visible_lines
     }
 
-    fn session_picker_overlay_rows(&self) -> usize {
-        let Some(picker) = self.session_picker.as_ref() else {
-            return 0;
-        };
-
-        let visible = picker.max_visible.min(picker.sessions.len().max(1));
-        let mut rows = 8 + visible;
-        if picker.sessions.len() > visible {
-            rows += 1;
-        }
-        if picker.confirm_delete || picker.status_message.is_some() {
-            rows += 1;
-        }
-        rows
-    }
-
-    fn settings_overlay_rows(&self) -> usize {
-        let Some(settings) = self.settings_ui.as_ref() else {
-            return 0;
-        };
-
-        let visible = settings.max_visible.min(settings.entries.len().max(1));
-        let mut rows = 5 + visible;
-        if settings.entries.len() > visible {
-            rows += 1;
-        }
-        rows
-    }
-
-    fn theme_picker_overlay_rows(&self) -> usize {
-        let Some(picker) = self.theme_picker.as_ref() else {
-            return 0;
-        };
-
-        let visible = picker.max_visible.min(picker.items.len().max(1));
-        let mut rows = 5 + visible;
-        if picker.items.len() > visible {
-            rows += 1;
-        }
-        rows
-    }
-
-    fn model_selector_overlay_rows(&self) -> usize {
-        let Some(selector) = self.model_selector.as_ref() else {
-            return 0;
-        };
-
-        let visible = selector.max_visible().min(selector.filtered_len().max(1));
-        let mut rows = 8 + visible;
-        if selector.filtered_len() > visible {
-            rows += 1;
-        }
-        if selector.configured_only() {
-            rows += 1;
-        }
-        if selector.selected_item().is_some() {
-            rows += 2;
-        }
-        rows
-    }
-
     /// Compute the effective conversation viewport height for the current
     /// render frame, accounting for conditional chrome (scroll indicator,
     /// tool status, status message) that reduce available space.
@@ -1078,29 +985,10 @@ impl PiApp {
         // Custom extension overlay: spacer + title + source + content/help.
         chrome += self.extension_custom_overlay_rows();
 
-        // Modal/list overlays rendered below conversation.
-        chrome += self.session_picker_overlay_rows();
-        chrome += self.settings_overlay_rows();
-        chrome += self.theme_picker_overlay_rows();
-        chrome += self.model_selector_overlay_rows();
-
         // Branch picker overlay: header + N visible branches + help line + padding.
         if let Some(ref picker) = self.branch_picker {
             let visible = picker.branches.len().min(picker.max_visible);
             chrome += 3 + visible + 2; // title + header + separator + items + help + blank
-        }
-
-        // Safety margin for escape-sequence styling + occasional line-wrap edge
-        // cases when multiple overlays/tool/status rows stack in the same frame.
-        let any_overlay = self.session_picker.is_some()
-            || self.settings_ui.is_some()
-            || self.theme_picker.is_some()
-            || self.capability_prompt.is_some()
-            || self.extension_custom_overlay.is_some()
-            || self.branch_picker.is_some()
-            || self.model_selector.is_some();
-        if any_overlay {
-            chrome += 2;
         }
 
         // Input area vs processing spinner.
@@ -1382,7 +1270,7 @@ const fn bool_label(value: bool) -> &'static str {
 }
 
 /// Run the interactive mode.
-#[allow(clippy::too_many_arguments, clippy::large_stack_frames)]
+#[allow(clippy::too_many_arguments)]
 pub async fn run_interactive(
     agent: Agent,
     session: Arc<Mutex<Session>>,
@@ -1447,7 +1335,6 @@ pub async fn run_interactive(
         conversation_from_session(&guard)
     };
 
-    let cwd_display = cwd.display().to_string();
     let app = PiApp::new(
         agent,
         session,
@@ -1468,9 +1355,6 @@ pub async fn run_interactive(
         usage,
     );
 
-    mouse_debug_log(&format!(
-        "interactive-start alt_screen=1 mouse_all_motion=1 cwd={cwd_display}"
-    ));
     let _tmux_wheel_override_guard = TmuxWheelOverrideGuard::new();
 
     Program::new(app)
@@ -2152,18 +2036,7 @@ impl PiApp {
                 mouse.button,
                 MouseButton::WheelDown | MouseButton::WheelRight
             );
-            mouse_debug_log(&format!(
-                "mouse-event action={:?} button={:?} x={} y={} follow_tail={} vp_offset={}",
-                mouse.action,
-                mouse.button,
-                mouse.x,
-                mouse.y,
-                self.follow_stream_tail,
-                self.conversation_viewport.y_offset()
-            ));
-
             if !(scroll_up || scroll_down) {
-                mouse_debug_log("mouse-event ignored: non-wheel");
                 return None;
             }
 
@@ -2173,7 +2046,6 @@ impl PiApp {
                 } else {
                     selector.select_next();
                 }
-                mouse_debug_log("mouse-wheel consumed by model-selector");
                 return None;
             }
             if let Some(picker) = self.branch_picker.as_mut() {
@@ -2182,7 +2054,6 @@ impl PiApp {
                 } else {
                     picker.select_next();
                 }
-                mouse_debug_log("mouse-wheel consumed by branch-picker");
                 return None;
             }
             if let Some(picker) = self.theme_picker.as_mut() {
@@ -2191,7 +2062,6 @@ impl PiApp {
                 } else {
                     picker.select_next();
                 }
-                mouse_debug_log("mouse-wheel consumed by theme-picker");
                 return None;
             }
             if let Some(settings_ui) = self.settings_ui.as_mut() {
@@ -2200,7 +2070,6 @@ impl PiApp {
                 } else {
                     settings_ui.select_next();
                 }
-                mouse_debug_log("mouse-wheel consumed by settings-ui");
                 return None;
             }
             if let Some(picker) = self.session_picker.as_mut() {
@@ -2209,7 +2078,6 @@ impl PiApp {
                 } else {
                     picker.select_next();
                 }
-                mouse_debug_log("mouse-wheel consumed by session-picker");
                 return None;
             }
             if self.autocomplete.open && !self.autocomplete.items.is_empty() {
@@ -2218,7 +2086,6 @@ impl PiApp {
                 } else {
                     self.autocomplete.select_next();
                 }
-                mouse_debug_log("mouse-wheel consumed by autocomplete");
                 return None;
             }
 
@@ -2226,9 +2093,6 @@ impl PiApp {
             let mouse_row = usize::from(mouse.y);
             let conversation_bottom_row = CONVERSATION_TOP_ROW.saturating_add(effective);
             if mouse_row < CONVERSATION_TOP_ROW || mouse_row >= conversation_bottom_row {
-                mouse_debug_log(&format!(
-                    "mouse-wheel ignored: outside conversation-area top={CONVERSATION_TOP_ROW} bottom={conversation_bottom_row} y={mouse_row}"
-                ));
                 return None;
             }
 
@@ -2238,28 +2102,19 @@ impl PiApp {
             self.conversation_viewport.set_content(content.trim_end());
             self.conversation_viewport.set_y_offset(saved_offset);
 
-            let wheel_step = self.conversation_viewport.mouse_wheel_delta.max(1);
+            let wheel_step = 1usize;
             let target_offset = if scroll_up {
                 saved_offset.saturating_sub(wheel_step)
             } else {
                 saved_offset.saturating_add(wheel_step)
             };
             self.conversation_viewport.set_y_offset(target_offset);
-            let new_offset = self.conversation_viewport.y_offset();
 
             if self.is_at_bottom() {
                 self.follow_stream_tail = true;
-            } else if new_offset != saved_offset {
+            } else if self.conversation_viewport.y_offset() != saved_offset {
                 self.follow_stream_tail = false;
             }
-            mouse_debug_log(&format!(
-                "mouse-wheel applied dir={} step={} offset:{}->{} follow_tail={}",
-                if scroll_up { "up" } else { "down" },
-                wheel_step,
-                saved_offset,
-                new_offset,
-                self.follow_stream_tail
-            ));
             return None;
         }
 
@@ -2304,8 +2159,6 @@ impl PiApp {
                 match key.key_type {
                     KeyType::Up => picker.select_prev(),
                     KeyType::Down => picker.select_next(),
-                    KeyType::PgUp => picker.select_page_up(),
-                    KeyType::PgDown => picker.select_page_down(),
                     KeyType::Runes if key.runes == ['k'] => picker.select_prev(),
                     KeyType::Runes if key.runes == ['j'] => picker.select_next(),
                     KeyType::Enter => {
@@ -2385,16 +2238,6 @@ impl PiApp {
                     }
                     KeyType::Runes if key.runes == ['j'] => {
                         settings_ui.select_next();
-                        self.settings_ui = Some(settings_ui);
-                        return None;
-                    }
-                    KeyType::PgUp => {
-                        settings_ui.select_page_up();
-                        self.settings_ui = Some(settings_ui);
-                        return None;
-                    }
-                    KeyType::PgDown => {
-                        settings_ui.select_page_down();
                         self.settings_ui = Some(settings_ui);
                         return None;
                     }
@@ -2491,14 +2334,6 @@ impl PiApp {
                     }
                     KeyType::Down => {
                         picker.select_next();
-                        return None;
-                    }
-                    KeyType::PgUp => {
-                        picker.select_page_up();
-                        return None;
-                    }
-                    KeyType::PgDown => {
-                        picker.select_page_down();
                         return None;
                     }
                     KeyType::Runes if key.runes == ['k'] && !picker.has_query() => {

@@ -421,7 +421,7 @@ impl PiApp {
             if total_lines > effective_vp {
                 let total = total_lines.saturating_sub(effective_vp);
                 let percent = (start * 100).checked_div(total).map_or(100, |p| p.min(100));
-                let indicator = format!("  [{percent}%] ↑/↓ PgUp/PgDn to scroll");
+                let indicator = format!("  [{percent}%] ↑/↓ PgUp/PgDn S-↑/S-↓ to scroll");
                 output.push_str(&self.styles.muted.render(&indicator));
                 output.push('\n');
             }
@@ -1256,7 +1256,7 @@ impl PiApp {
                 output,
                 "  {}",
                 self.styles.muted_italic.render(
-                    "Type: filter  Backspace: clear  ↑/↓/j/k/PgUp/PgDn: navigate  Enter: select  Ctrl+D: delete  Esc/q: cancel",
+                    "Type: filter  Backspace: clear  ↑/↓/j/k: navigate  Enter: select  Ctrl+D: delete  Esc/q: cancel",
                 )
             );
             if let Some(message) = &picker.status_message {
@@ -1363,7 +1363,7 @@ impl PiApp {
             "  {}",
             self.styles
                 .muted_italic
-                .render("↑/↓/j/k/PgUp/PgDn: navigate  Enter: select  Esc/q: cancel")
+                .render("↑/↓/j/k: navigate  Enter: select  Esc/q: cancel")
         );
 
         output
@@ -1439,7 +1439,7 @@ impl PiApp {
             "  {}",
             self.styles
                 .muted_italic
-                .render("↑/↓/j/k/PgUp/PgDn: navigate  Enter: select  Esc/q: back")
+                .render("↑/↓/j/k: navigate  Enter: select  Esc/q: back")
         );
 
         output
@@ -1614,7 +1614,7 @@ impl PiApp {
             "\n  {}",
             self.styles
                 .muted_italic
-                .render("↑/↓/j/k/PgUp/PgDn: navigate  Enter: switch  Esc: cancel  * = current")
+                .render("↑/↓/j/k: navigate  Enter: switch  Esc: cancel  * = current")
         );
         output
     }

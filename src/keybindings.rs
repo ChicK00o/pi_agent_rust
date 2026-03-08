@@ -1527,7 +1527,7 @@ mod tests {
         assert!(cursor_left.contains(&KeyBinding::plain("left")));
         assert!(cursor_left.contains(&KeyBinding::ctrl("b")));
 
-        // Check tmux/alternate-scroll fallbacks map to page scrolling
+        // Check tmux fallback style page bindings
         let page_up = bindings.get_bindings(AppAction::PageUp);
         assert!(page_up.contains(&KeyBinding::plain("pageup")));
         assert!(page_up.contains(&KeyBinding::shift("up")));
