@@ -1591,6 +1591,7 @@ mod stream_delta_batcher_tests {
     use crate::provider::{Context, InputType, Model, ModelCost, Provider, StreamOptions};
     use crate::resources::{ResourceCliOptions, ResourceLoader};
     use crate::session::Session;
+    use crate::session_index::SessionMeta;
     use crate::tools::ToolRegistry;
     use asupersync::runtime::RuntimeBuilder;
     use futures::stream;
@@ -2006,6 +2007,103 @@ mod stream_delta_batcher_tests {
             app.view_effective_conversation_height() < baseline,
             "autocomplete dropdown must shrink conversation viewport budget"
         );
+    }
+
+    #[test]
+    fn mouse_wheel_navigates_overlay_selections() {
+        let mut app = build_test_app();
+
+        let mut models = Vec::new();
+        for idx in 0..8 {
+            models.push(model_entry("openai", &format!("gpt-4o-mini-{idx}")));
+        }
+        app.model_selector = Some(crate::model_selector::ModelSelectorOverlay::new(&models));
+
+        let wheel_down = bubbletea::MouseMsg {
+            action: bubbletea::MouseAction::Press,
+            button: bubbletea::MouseButton::WheelDown,
+            ..bubbletea::MouseMsg::default()
+        };
+        let wheel_up = bubbletea::MouseMsg {
+            action: bubbletea::MouseAction::Press,
+            button: bubbletea::MouseButton::WheelUp,
+            ..bubbletea::MouseMsg::default()
+        };
+
+        let _ = app.update(Message::new(wheel_down));
+        assert_eq!(
+            app.model_selector
+                .as_ref()
+                .expect("selector active")
+                .selected_index(),
+            1
+        );
+
+        let sessions = vec![
+            SessionMeta {
+                path: "a.jsonl".to_string(),
+                id: "a".to_string(),
+                cwd: ".".to_string(),
+                timestamp: "2026-01-01T00:00:00Z".to_string(),
+                message_count: 1,
+                last_modified_ms: 1,
+                size_bytes: 1,
+                name: Some("A".to_string()),
+            },
+            SessionMeta {
+                path: "b.jsonl".to_string(),
+                id: "b".to_string(),
+                cwd: ".".to_string(),
+                timestamp: "2026-01-01T00:00:01Z".to_string(),
+                message_count: 1,
+                last_modified_ms: 2,
+                size_bytes: 1,
+                name: Some("B".to_string()),
+            },
+        ];
+        app.model_selector = None;
+        app.session_picker = Some(SessionPickerOverlay::new(sessions));
+
+        let _ = app.update(Message::new(wheel_down));
+        assert_eq!(
+            app.session_picker
+                .as_ref()
+                .expect("session picker active")
+                .selected,
+            1
+        );
+        let _ = app.update(Message::new(wheel_up));
+        assert_eq!(
+            app.session_picker
+                .as_ref()
+                .expect("session picker active")
+                .selected,
+            0
+        );
+
+        app.session_picker = None;
+        app.autocomplete.open = true;
+        app.autocomplete.items = vec![
+            AutocompleteItem {
+                kind: AutocompleteItemKind::Path,
+                label: "one".to_string(),
+                insert: "one".to_string(),
+                description: None,
+            },
+            AutocompleteItem {
+                kind: AutocompleteItemKind::Path,
+                label: "two".to_string(),
+                insert: "two".to_string(),
+                description: None,
+            },
+        ];
+
+        let _ = app.update(Message::new(wheel_down));
+        assert_eq!(app.autocomplete.selected, Some(0));
+        let _ = app.update(Message::new(wheel_down));
+        assert_eq!(app.autocomplete.selected, Some(1));
+        let _ = app.update(Message::new(wheel_up));
+        assert_eq!(app.autocomplete.selected, Some(0));
     }
 
     #[test]

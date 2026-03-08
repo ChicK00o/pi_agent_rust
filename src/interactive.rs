@@ -2011,37 +2011,80 @@ impl PiApp {
         }
 
         if let Some(mouse) = msg.downcast_ref::<MouseMsg>() {
-            let modal_active = self.tree_ui.is_some()
-                || self.session_picker.is_some()
-                || self.settings_ui.is_some()
-                || self.theme_picker.is_some()
-                || self.capability_prompt.is_some()
-                || self.extension_custom_overlay.is_some()
-                || self.branch_picker.is_some()
-                || self.model_selector.is_some();
-            if !modal_active
-                && mouse.action == MouseAction::Press
-                && matches!(
-                    mouse.button,
-                    MouseButton::WheelUp
-                        | MouseButton::WheelDown
-                        | MouseButton::WheelLeft
-                        | MouseButton::WheelRight
-                )
-            {
-                let saved_offset = self.conversation_viewport.y_offset();
-                let content = self.build_conversation_content();
-                let effective = self.view_effective_conversation_height().max(1);
-                self.conversation_viewport.height = effective;
-                self.conversation_viewport.set_content(content.trim_end());
-                self.conversation_viewport.set_y_offset(saved_offset);
-                self.conversation_viewport.update(&msg);
+            if mouse.action != MouseAction::Press {
+                return None;
+            }
 
-                if self.is_at_bottom() {
-                    self.follow_stream_tail = true;
-                } else if self.conversation_viewport.y_offset() != saved_offset {
-                    self.follow_stream_tail = false;
+            let scroll_up = matches!(mouse.button, MouseButton::WheelUp | MouseButton::WheelLeft);
+            let scroll_down = matches!(
+                mouse.button,
+                MouseButton::WheelDown | MouseButton::WheelRight
+            );
+            if !(scroll_up || scroll_down) {
+                return None;
+            }
+
+            if let Some(selector) = self.model_selector.as_mut() {
+                if scroll_up {
+                    selector.select_prev();
+                } else {
+                    selector.select_next();
                 }
+                return None;
+            }
+            if let Some(picker) = self.branch_picker.as_mut() {
+                if scroll_up {
+                    picker.select_prev();
+                } else {
+                    picker.select_next();
+                }
+                return None;
+            }
+            if let Some(picker) = self.theme_picker.as_mut() {
+                if scroll_up {
+                    picker.select_prev();
+                } else {
+                    picker.select_next();
+                }
+                return None;
+            }
+            if let Some(settings_ui) = self.settings_ui.as_mut() {
+                if scroll_up {
+                    settings_ui.select_prev();
+                } else {
+                    settings_ui.select_next();
+                }
+                return None;
+            }
+            if let Some(picker) = self.session_picker.as_mut() {
+                if scroll_up {
+                    picker.select_prev();
+                } else {
+                    picker.select_next();
+                }
+                return None;
+            }
+            if self.autocomplete.open && !self.autocomplete.items.is_empty() {
+                if scroll_up {
+                    self.autocomplete.select_prev();
+                } else {
+                    self.autocomplete.select_next();
+                }
+                return None;
+            }
+
+            let saved_offset = self.conversation_viewport.y_offset();
+            let content = self.build_conversation_content();
+            let effective = self.view_effective_conversation_height().max(1);
+            self.conversation_viewport.height = effective;
+            self.conversation_viewport.set_content(content.trim_end());
+            self.conversation_viewport.set_y_offset(saved_offset);
+            self.conversation_viewport.update(&msg);
+
+            if self.is_at_bottom() {
+                self.follow_stream_tail = true;
+            } else if self.conversation_viewport.y_offset() != saved_offset {
+                self.follow_stream_tail = false;
             }
             return None;
         }

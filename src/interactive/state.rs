@@ -1111,4 +1111,43 @@ mod tests {
         let state = SettingsUiState::new();
         assert!(state.entries.contains(&SettingsUiEntry::DefaultPermissive));
     }
+
+    #[test]
+    fn settings_page_navigation_moves_by_visible_window() {
+        let mut state = SettingsUiState::new();
+        state.max_visible = 4;
+        state.select_page_down();
+        assert_eq!(state.selected, 3);
+        state.select_page_down();
+        assert_eq!(state.selected, 6);
+        state.select_page_up();
+        assert_eq!(state.selected, 3);
+    }
+
+    #[test]
+    fn session_picker_page_navigation_moves_by_visible_window() {
+        use crate::session_index::SessionMeta;
+
+        let sessions = (0u32..10)
+            .map(|idx| SessionMeta {
+                path: format!("{idx}.jsonl"),
+                id: format!("id-{idx}"),
+                cwd: ".".to_string(),
+                timestamp: format!("2026-01-01T00:00:{idx:02}Z"),
+                message_count: u64::from(idx),
+                last_modified_ms: i64::from(idx),
+                size_bytes: 1,
+                name: None,
+            })
+            .collect::<Vec<_>>();
+
+        let mut picker = SessionPickerOverlay::new(sessions);
+        picker.max_visible = 5;
+        picker.select_page_down();
+        assert_eq!(picker.selected, 4);
+        picker.select_page_down();
+        assert_eq!(picker.selected, 8);
+        picker.select_page_up();
+        assert_eq!(picker.selected, 4);
+    }
 }
