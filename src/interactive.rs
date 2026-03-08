@@ -141,16 +141,15 @@ use self::tree::{
 /// Compute the maximum visible items for overlay pickers (model selector,
 /// session picker, settings, branch picker, etc.) based on the terminal height.
 ///
-/// The overlay typically needs ~8 rows of chrome: title, search field, divider,
-/// pagination hint, detail line, help footer, and margins.  We reserve that
-/// overhead and clamp the result to `[3, 30]` so the UI stays usable on very
-/// small terminals while allowing taller lists on large ones.
+/// The overlay list shares vertical budget with header/footer and occasional
+/// viewport/status rows. We reserve a conservative baseline so picker rows stay
+/// inside the visible terminal area instead of being clipped below the fold.
 const CONVERSATION_TOP_ROW: usize = 4;
 const TMUX_WHEEL_OVERRIDE_ENV: &str = "PI_TMUX_WHEEL_OVERRIDE";
 
 fn overlay_max_visible(term_height: usize) -> usize {
-    const OVERLAY_CHROME_ROWS: usize = 8;
-    term_height.saturating_sub(OVERLAY_CHROME_ROWS).clamp(3, 30)
+    const RESERVED_ROWS: usize = 16;
+    term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
 }
 
 fn tmux_capture_root_binding(key: &str) -> Option<String> {
@@ -949,6 +948,67 @@ impl PiApp {
         4 + visible_lines
     }
 
+    fn session_picker_overlay_rows(&self) -> usize {
+        let Some(picker) = self.session_picker.as_ref() else {
+            return 0;
+        };
+
+        let visible = picker.max_visible.min(picker.sessions.len().max(1));
+        let mut rows = 8 + visible;
+        if picker.sessions.len() > visible {
+            rows += 1;
+        }
+        if picker.confirm_delete || picker.status_message.is_some() {
+            rows += 1;
+        }
+        rows
+    }
+
+    fn settings_overlay_rows(&self) -> usize {
+        let Some(settings) = self.settings_ui.as_ref() else {
+            return 0;
+        };
+
+        let visible = settings.max_visible.min(settings.entries.len().max(1));
+        let mut rows = 5 + visible;
+        if settings.entries.len() > visible {
+            rows += 1;
+        }
+        rows
+    }
+
+    fn theme_picker_overlay_rows(&self) -> usize {
+        let Some(picker) = self.theme_picker.as_ref() else {
+            return 0;
+        };
+
+        let visible = picker.max_visible.min(picker.items.len().max(1));
+        let mut rows = 5 + visible;
+        if picker.items.len() > visible {
+            rows += 1;
+        }
+        rows
+    }
+
+    fn model_selector_overlay_rows(&self) -> usize {
+        let Some(selector) = self.model_selector.as_ref() else {
+            return 0;
+        };
+
+        let visible = selector.max_visible().min(selector.filtered_len().max(1));
+        let mut rows = 8 + visible;
+        if selector.filtered_len() > visible {
+            rows += 1;
+        }
+        if selector.configured_only() {
+            rows += 1;
+        }
+        if selector.selected_item().is_some() {
+            rows += 2;
+        }
+        rows
+    }
+
     /// Compute the effective conversation viewport height for the current
     /// render frame, accounting for conditional chrome (scroll indicator,
     /// tool status, status message) that reduce available space.
@@ -985,10 +1045,29 @@ impl PiApp {
         // Custom extension overlay: spacer + title + source + content/help.
         chrome += self.extension_custom_overlay_rows();
 
+        // Modal/list overlays rendered below conversation.
+        chrome += self.session_picker_overlay_rows();
+        chrome += self.settings_overlay_rows();
+        chrome += self.theme_picker_overlay_rows();
+        chrome += self.model_selector_overlay_rows();
+
         // Branch picker overlay: header + N visible branches + help line + padding.
         if let Some(ref picker) = self.branch_picker {
             let visible = picker.branches.len().min(picker.max_visible);
             chrome += 3 + visible + 2; // title + header + separator + items + help + blank
+        }
+
+        // Safety margin for escape-sequence styling + occasional line-wrap edge
+        // cases when multiple overlays/tool/status rows stack in the same frame.
+        let any_overlay = self.session_picker.is_some()
+            || self.settings_ui.is_some()
+            || self.theme_picker.is_some()
+            || self.capability_prompt.is_some()
+            || self.extension_custom_overlay.is_some()
+            || self.branch_picker.is_some()
+            || self.model_selector.is_some();
+        if any_overlay {
+            chrome += 2;
         }
 
         // Input area vs processing spinner.
@@ -2159,6 +2238,8 @@ impl PiApp {
                 match key.key_type {
                     KeyType::Up => picker.select_prev(),
                     KeyType::Down => picker.select_next(),
+                    KeyType::PgUp => picker.select_page_up(),
+                    KeyType::PgDown => picker.select_page_down(),
                     KeyType::Runes if key.runes == ['k'] => picker.select_prev(),
                     KeyType::Runes if key.runes == ['j'] => picker.select_next(),
                     KeyType::Enter => {
@@ -2238,6 +2319,16 @@ impl PiApp {
                     }
                     KeyType::Runes if key.runes == ['j'] => {
                         settings_ui.select_next();
+                        self.settings_ui = Some(settings_ui);
+                        return None;
+                    }
+                    KeyType::PgUp => {
+                        settings_ui.select_page_up();
+                        self.settings_ui = Some(settings_ui);
+                        return None;
+                    }
+                    KeyType::PgDown => {
+                        settings_ui.select_page_down();
                         self.settings_ui = Some(settings_ui);
                         return None;
                     }
@@ -2334,6 +2425,14 @@ impl PiApp {
                     }
                     KeyType::Down => {
                         picker.select_next();
+                        return None;
+                    }
+                    KeyType::PgUp => {
+                        picker.select_page_up();
+                        return None;
+                    }
+                    KeyType::PgDown => {
+                        picker.select_page_down();
                         return None;
                     }
                     KeyType::Runes if key.runes == ['k'] && !picker.has_query() => {

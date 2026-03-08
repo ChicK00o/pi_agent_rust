@@ -1933,6 +1933,134 @@ mod stream_delta_batcher_tests {
     }
 
     #[test]
+    fn model_selector_reduces_conversation_height_budget() {
+        let mut app = build_test_app();
+        app.term_height = 24;
+        let idle_height = app.view_effective_conversation_height();
+
+        let mut models = Vec::new();
+        for idx in 0..40 {
+            models.push(model_entry("openai", &format!("gpt-4o-mini-{idx}")));
+        }
+        let mut selector = crate::model_selector::ModelSelectorOverlay::new(&models);
+        selector.set_max_visible(super::overlay_max_visible(app.term_height));
+        app.model_selector = Some(selector);
+
+        assert!(
+            app.view_effective_conversation_height() < idle_height,
+            "model selector rows must shrink the conversation viewport budget"
+        );
+    }
+
+    #[test]
+    fn overlay_states_reduce_conversation_height_budget() {
+        let mut app = build_test_app();
+        app.term_height = 24;
+        let baseline = app.view_effective_conversation_height();
+
+        app.session_picker = Some(SessionPickerOverlay::new(Vec::new()));
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "session picker rows must shrink conversation viewport budget"
+        );
+        app.session_picker = None;
+
+        app.settings_ui = Some(SettingsUiState::new());
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "settings rows must shrink conversation viewport budget"
+        );
+        app.settings_ui = None;
+
+        app.theme_picker = Some(ThemePickerOverlay::new(Path::new(".")));
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "theme picker rows must shrink conversation viewport budget"
+        );
+        app.theme_picker = None;
+
+        app.branch_picker = Some(BranchPickerOverlay::new(Vec::new()));
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "branch picker rows must shrink conversation viewport budget"
+        );
+        app.branch_picker = None;
+
+        app.autocomplete.open = true;
+        app.autocomplete.max_visible = 15;
+        app.autocomplete.items = vec![
+            AutocompleteItem {
+                kind: AutocompleteItemKind::Path,
+                label: "alpha".to_string(),
+                insert: "alpha".to_string(),
+                description: Some("item one".to_string()),
+            },
+            AutocompleteItem {
+                kind: AutocompleteItemKind::Path,
+                label: "beta".to_string(),
+                insert: "beta".to_string(),
+                description: Some("item two".to_string()),
+            },
+        ];
+        assert!(
+            app.view_effective_conversation_height() < baseline,
+            "autocomplete dropdown must shrink conversation viewport budget"
+        );
+    }
+
+    #[test]
+    fn mouse_wheel_updates_conversation_offset_and_follow_tail() {
+        let mut app = build_test_app();
+        app.term_height = 18;
+
+        for idx in 0..120 {
+            app.messages.push(ConversationMessage::new(
+                MessageRole::Assistant,
+                format!("assistant line {idx}"),
+                None,
+            ));
+        }
+        app.scroll_to_bottom();
+        let bottom_offset = app.conversation_viewport.y_offset();
+
+        let wheel_up = bubbletea::MouseMsg {
+            action: bubbletea::MouseAction::Press,
+            button: bubbletea::MouseButton::WheelUp,
+            ..bubbletea::MouseMsg::default()
+        };
+        let _ = app.update(Message::new(wheel_up));
+
+        let scrolled_offset = app.conversation_viewport.y_offset();
+        assert!(
+            scrolled_offset < bottom_offset,
+            "wheel-up should move viewport up from the tail"
+        );
+        assert!(
+            !app.follow_stream_tail,
+            "manual wheel scrolling should disable auto-follow"
+        );
+
+        let wheel_down = bubbletea::MouseMsg {
+            action: bubbletea::MouseAction::Press,
+            button: bubbletea::MouseButton::WheelDown,
+            ..bubbletea::MouseMsg::default()
+        };
+
+        for _ in 0..200 {
+            let _ = app.update(Message::new(wheel_down));
+        }
+
+        assert!(
+            app.is_at_bottom(),
+            "wheel-down scrolling should eventually reach the tail"
+        );
+        assert!(
+            app.follow_stream_tail,
+            "reaching the tail should re-enable auto-follow"
+        );
+    }
+
+    #[test]
     fn capability_prompt_takes_key_priority_over_custom_overlay() {
         let mut app = build_test_app();
         let poll_request = ExtensionUiRequest::new(
