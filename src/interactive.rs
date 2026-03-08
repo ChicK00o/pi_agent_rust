@@ -143,8 +143,10 @@ use self::tree::{
 /// The overlay list shares vertical budget with header/footer and occasional
 /// viewport/status rows. We reserve a conservative baseline so picker rows stay
 /// inside the visible terminal area instead of being clipped below the fold.
+const RESERVED_ROWS: usize = 16;
+const CONVERSATION_TOP_ROW: usize = 4;
+
 fn overlay_max_visible(term_height: usize) -> usize {
-    const RESERVED_ROWS: usize = 16;
     term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
 }
 
@@ -1012,7 +1014,7 @@ impl PiApp {
         let viewport_height = self.conversation_viewport_height();
         let mut viewport = Viewport::new(self.term_width.saturating_sub(2), viewport_height);
         viewport.mouse_wheel_enabled = true;
-        viewport.mouse_wheel_delta = 3;
+        viewport.mouse_wheel_delta = 1;
         self.conversation_viewport = viewport;
         self.scroll_to_bottom();
     }
@@ -1339,7 +1341,7 @@ pub async fn run_interactive(
 
     Program::new(app)
         .with_alt_screen()
-        .with_mouse_cell_motion()
+        .with_mouse_all_motion()
         .with_input_receiver(ui_rx)
         .run()?;
 
@@ -1663,7 +1665,7 @@ impl PiApp {
         let mut conversation_viewport =
             Viewport::new(term_width.saturating_sub(2), viewport_height);
         conversation_viewport.mouse_wheel_enabled = true;
-        conversation_viewport.mouse_wheel_delta = 3;
+        conversation_viewport.mouse_wheel_delta = 1;
 
         let model = format!(
             "{}/{}",
@@ -2069,9 +2071,15 @@ impl PiApp {
                 return None;
             }
 
+            let effective = self.view_effective_conversation_height().max(1);
+            let mouse_row = usize::from(mouse.y);
+            let conversation_bottom_row = CONVERSATION_TOP_ROW.saturating_add(effective);
+            if mouse_row < CONVERSATION_TOP_ROW || mouse_row >= conversation_bottom_row {
+                return None;
+            }
+
             let saved_offset = self.conversation_viewport.y_offset();
             let content = self.build_conversation_content();
-            let effective = self.view_effective_conversation_height().max(1);
             self.conversation_viewport.height = effective;
             self.conversation_viewport.set_content(content.trim_end());
             self.conversation_viewport.set_y_offset(saved_offset);

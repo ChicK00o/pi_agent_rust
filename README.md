@@ -1499,6 +1499,8 @@ The interactive mode uses the **Elm Architecture** (Model-Update-View) via the `
 
 **Viewport scrolling**: The conversation viewport tracks whether the user is at the bottom. When new content arrives and the user hasn't scrolled up, the viewport auto-follows the stream tail. Scrolling up disables auto-follow; pressing `End` or typing a new message re-enables it.
 
+**Back-buffer ownership (tmux/terminal)**: In interactive mode, Pi runs in the terminal alternate screen and owns the in-app conversation back buffer/viewport. This means mouse wheel scrolling is handled by Pi (not shell scrollback). Wheel input is consumed in the conversation render region and moves exactly one line per wheel tick for deterministic behavior; `PgUp`/`PgDn` and `Shift+Up`/`Shift+Down` remain keyboard fallbacks.
+
 **Overlay system**: Modal UIs (model selector, session picker, branch navigator, extension capability prompts) stack on top of the main conversation view. Each overlay captures keyboard input until dismissed. Only the topmost active overlay receives events.
 
 **Slash commands** available in the interactive editor:

@@ -2143,14 +2143,16 @@ mod stream_delta_batcher_tests {
         let bottom_offset = app.conversation_viewport.y_offset();
 
         let wheel_up_motion = bubbletea::MouseMsg {
+            y: 6,
             action: bubbletea::MouseAction::Motion,
             button: bubbletea::MouseButton::WheelUp,
             ..bubbletea::MouseMsg::default()
         };
         let _ = app.update(Message::new(wheel_up_motion));
-        assert!(
-            app.conversation_viewport.y_offset() < bottom_offset,
-            "wheel motion should still move conversation viewport"
+        assert_eq!(
+            app.conversation_viewport.y_offset(),
+            bottom_offset.saturating_sub(1),
+            "wheel motion should move conversation viewport deterministically by one line"
         );
     }
 
@@ -2170,6 +2172,7 @@ mod stream_delta_batcher_tests {
         let bottom_offset = app.conversation_viewport.y_offset();
 
         let wheel_up = bubbletea::MouseMsg {
+            y: 6,
             action: bubbletea::MouseAction::Press,
             button: bubbletea::MouseButton::WheelUp,
             ..bubbletea::MouseMsg::default()
@@ -2177,9 +2180,10 @@ mod stream_delta_batcher_tests {
         let _ = app.update(Message::new(wheel_up));
 
         let scrolled_offset = app.conversation_viewport.y_offset();
-        assert!(
-            scrolled_offset < bottom_offset,
-            "wheel-up should move viewport up from the tail"
+        assert_eq!(
+            scrolled_offset,
+            bottom_offset.saturating_sub(1),
+            "wheel-up should move viewport by exactly one line for deterministic scrolling"
         );
         assert!(
             !app.follow_stream_tail,
@@ -2187,6 +2191,7 @@ mod stream_delta_batcher_tests {
         );
 
         let wheel_down = bubbletea::MouseMsg {
+            y: 6,
             action: bubbletea::MouseAction::Press,
             button: bubbletea::MouseButton::WheelDown,
             ..bubbletea::MouseMsg::default()
@@ -2203,6 +2208,36 @@ mod stream_delta_batcher_tests {
         assert!(
             app.follow_stream_tail,
             "reaching the tail should re-enable auto-follow"
+        );
+    }
+
+    #[test]
+    fn mouse_wheel_outside_conversation_area_does_not_move_viewport() {
+        let mut app = build_test_app();
+        app.term_height = 18;
+
+        for idx in 0..120 {
+            app.messages.push(ConversationMessage::new(
+                MessageRole::Assistant,
+                format!("assistant line {idx}"),
+                None,
+            ));
+        }
+        app.scroll_to_bottom();
+
+        let wheel_up_on_header = bubbletea::MouseMsg {
+            y: 1,
+            action: bubbletea::MouseAction::Press,
+            button: bubbletea::MouseButton::WheelUp,
+            ..bubbletea::MouseMsg::default()
+        };
+
+        let before = app.conversation_viewport.y_offset();
+        let _ = app.update(Message::new(wheel_up_on_header));
+        assert_eq!(
+            app.conversation_viewport.y_offset(),
+            before,
+            "wheel outside conversation region should not alter viewport offset"
         );
     }
 
