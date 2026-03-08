@@ -251,6 +251,20 @@ fn ext_commands_catalog_empty_manager() {
     assert!(entries.is_empty());
 }
 
+#[test]
+fn tmux_binding_rhs_extracts_rhs() {
+    let line = "bind-key -T root WheelUpPane if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e -t = ; send-keys -M\"";
+    let rhs = tmux_binding_rhs(line, "WheelUpPane").expect("rhs");
+    assert!(rhs.starts_with("if-shell"));
+    assert!(rhs.contains("copy-mode -e -t ="));
+}
+
+#[test]
+fn tmux_binding_rhs_returns_none_when_key_missing() {
+    let line = "bind-key -T root WheelDownPane send-keys -M";
+    assert!(tmux_binding_rhs(line, "WheelUpPane").is_none());
+}
+
 // --- truncate tests ---
 
 #[test]
