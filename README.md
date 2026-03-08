@@ -1503,6 +1503,8 @@ The interactive mode uses the **Elm Architecture** (Model-Update-View) via the `
 
 **Mouse debug log (tmux diagnostics)**: Set `PI_MOUSE_DEBUG=1` to emit per-event diagnostics. By default logs are written next to the running executable as `pi-mouse-debug.log` (for release builds, that is usually beside the `pi` binary). If that directory is not writable, Pi automatically falls back to `${TMPDIR:-/tmp}/pi-mouse-debug-$USER.log`. Override location with `PI_MOUSE_DEBUG_FILE=/abs/path/to/log` if needed.
 
+When running under tmux, Pi now applies a temporary in-process wheel passthrough override while interactive mode is active (restored on exit), so wheel-up reaches Pi instead of entering tmux copy-mode. Set `PI_TMUX_WHEEL_OVERRIDE=0` to disable this behavior.
+
 **Overlay system**: Modal UIs (model selector, session picker, branch navigator, extension capability prompts) stack on top of the main conversation view. Each overlay captures keyboard input until dismissed. Only the topmost active overlay receives events.
 
 **Slash commands** available in the interactive editor:

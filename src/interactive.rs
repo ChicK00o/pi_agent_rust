@@ -35,6 +35,7 @@ use std::fmt::Write as _;
 use std::fs::OpenOptions;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -149,6 +150,7 @@ const RESERVED_ROWS: usize = 16;
 const CONVERSATION_TOP_ROW: usize = 4;
 const MOUSE_DEBUG_ENV: &str = "PI_MOUSE_DEBUG";
 const MOUSE_DEBUG_FILE_ENV: &str = "PI_MOUSE_DEBUG_FILE";
+const TMUX_WHEEL_OVERRIDE_ENV: &str = "PI_TMUX_WHEEL_OVERRIDE";
 
 fn overlay_max_visible(term_height: usize) -> usize {
     term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
@@ -189,6 +191,91 @@ fn mouse_debug_log(line: &str) {
 
     let ts = Utc::now().to_rfc3339();
     let _ = writeln!(file, "[{ts}] {line}");
+}
+
+fn tmux_capture_root_binding(key: &str) -> Option<String> {
+    let output = Command::new("tmux")
+        .args(["list-keys", "-T", "root"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find(|line| line.contains(key))
+        .map(std::string::ToString::to_string)
+}
+
+fn tmux_source_line(line: &str) -> bool {
+    let Ok(mut child) = Command::new("tmux")
+        .args(["source-file", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    if let Some(stdin) = child.stdin.as_mut() {
+        if stdin.write_all(line.as_bytes()).is_err() {
+            let _ = child.wait();
+            return false;
+        }
+        if stdin.write_all(b"\n").is_err() {
+            let _ = child.wait();
+            return false;
+        }
+    }
+    child.wait().is_ok_and(|status| status.success())
+}
+
+fn tmux_override_wheel_bindings() -> Option<(String, String)> {
+    std::env::var_os("TMUX")?;
+    if std::env::var_os(TMUX_WHEEL_OVERRIDE_ENV).is_some_and(|value| value == "0") {
+        mouse_debug_log("tmux-wheel-override disabled via PI_TMUX_WHEEL_OVERRIDE=0");
+        return None;
+    }
+    let up = tmux_capture_root_binding("WheelUpPane")?;
+    let down = tmux_capture_root_binding("WheelDownPane")?;
+
+    let up_ok = tmux_source_line("bind-key -T root WheelUpPane send-keys -M");
+    let down_ok = tmux_source_line("bind-key -T root WheelDownPane send-keys -M");
+    if up_ok && down_ok {
+        mouse_debug_log("tmux-wheel-override enabled (runtime, temporary)");
+        Some((up, down))
+    } else {
+        mouse_debug_log("tmux-wheel-override failed to enable");
+        None
+    }
+}
+
+struct TmuxWheelOverrideGuard {
+    original_up: String,
+    original_down: String,
+}
+
+impl TmuxWheelOverrideGuard {
+    fn new() -> Option<Self> {
+        let (original_up, original_down) = tmux_override_wheel_bindings()?;
+        Some(Self {
+            original_up,
+            original_down,
+        })
+    }
+}
+
+impl Drop for TmuxWheelOverrideGuard {
+    fn drop(&mut self) {
+        let up_ok = tmux_source_line(&self.original_up);
+        let down_ok = tmux_source_line(&self.original_down);
+        if up_ok && down_ok {
+            mouse_debug_log("tmux-wheel-override restored original bindings");
+        } else {
+            mouse_debug_log("tmux-wheel-override failed to restore original bindings");
+        }
+    }
 }
 
 // ============================================================================
@@ -1384,6 +1471,7 @@ pub async fn run_interactive(
     mouse_debug_log(&format!(
         "interactive-start alt_screen=1 mouse_all_motion=1 cwd={cwd_display}"
     ));
+    let _tmux_wheel_override_guard = TmuxWheelOverrideGuard::new();
 
     Program::new(app)
         .with_alt_screen()
