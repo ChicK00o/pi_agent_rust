@@ -20,8 +20,8 @@ use bubbles::spinner::{SpinnerModel, TickMsg as SpinnerTickMsg, spinners};
 use bubbles::textarea::TextArea;
 use bubbles::viewport::Viewport;
 use bubbletea::{
-    Cmd, KeyMsg, KeyType, Message, Model as BubbleteaModel, Program, WindowSizeMsg, batch, quit,
-    sequence,
+    Cmd, KeyMsg, KeyType, Message, Model as BubbleteaModel, MouseAction, MouseButton, MouseMsg,
+    Program, WindowSizeMsg, batch, quit, sequence,
 };
 use chrono::Utc;
 use crossterm::{cursor, terminal};
@@ -140,13 +140,12 @@ use self::tree::{
 /// Compute the maximum visible items for overlay pickers (model selector,
 /// session picker, settings, branch picker, etc.) based on the terminal height.
 ///
-/// The overlay typically needs ~8 rows of chrome: title, search field, divider,
-/// pagination hint, detail line, help footer, and margins.  We reserve that
-/// overhead and clamp the result to `[3, 30]` so the UI stays usable on very
-/// small terminals while allowing taller lists on large ones.
+/// The overlay list shares vertical budget with header/footer and occasional
+/// viewport/status rows. We reserve a conservative baseline so picker rows stay
+/// inside the visible terminal area instead of being clipped below the fold.
 fn overlay_max_visible(term_height: usize) -> usize {
-    const OVERLAY_CHROME_ROWS: usize = 8;
-    term_height.saturating_sub(OVERLAY_CHROME_ROWS).clamp(3, 30)
+    const RESERVED_ROWS: usize = 14;
+    term_height.saturating_sub(RESERVED_ROWS).clamp(3, 30)
 }
 
 // ============================================================================
@@ -852,6 +851,67 @@ impl PiApp {
         4 + visible_lines
     }
 
+    fn session_picker_overlay_rows(&self) -> usize {
+        let Some(picker) = self.session_picker.as_ref() else {
+            return 0;
+        };
+
+        let visible = picker.max_visible.min(picker.sessions.len().max(1));
+        let mut rows = 8 + visible;
+        if picker.sessions.len() > visible {
+            rows += 1;
+        }
+        if picker.confirm_delete || picker.status_message.is_some() {
+            rows += 1;
+        }
+        rows
+    }
+
+    fn settings_overlay_rows(&self) -> usize {
+        let Some(settings) = self.settings_ui.as_ref() else {
+            return 0;
+        };
+
+        let visible = settings.max_visible.min(settings.entries.len().max(1));
+        let mut rows = 5 + visible;
+        if settings.entries.len() > visible {
+            rows += 1;
+        }
+        rows
+    }
+
+    fn theme_picker_overlay_rows(&self) -> usize {
+        let Some(picker) = self.theme_picker.as_ref() else {
+            return 0;
+        };
+
+        let visible = picker.max_visible.min(picker.items.len().max(1));
+        let mut rows = 5 + visible;
+        if picker.items.len() > visible {
+            rows += 1;
+        }
+        rows
+    }
+
+    fn model_selector_overlay_rows(&self) -> usize {
+        let Some(selector) = self.model_selector.as_ref() else {
+            return 0;
+        };
+
+        let visible = selector.max_visible().min(selector.filtered_len().max(1));
+        let mut rows = 8 + visible;
+        if selector.filtered_len() > visible {
+            rows += 1;
+        }
+        if selector.configured_only() {
+            rows += 1;
+        }
+        if selector.selected_item().is_some() {
+            rows += 2;
+        }
+        rows
+    }
+
     /// Compute the effective conversation viewport height for the current
     /// render frame, accounting for conditional chrome (scroll indicator,
     /// tool status, status message) that reduce available space.
@@ -887,6 +947,12 @@ impl PiApp {
 
         // Custom extension overlay: spacer + title + source + content/help.
         chrome += self.extension_custom_overlay_rows();
+
+        // Modal/list overlays rendered below conversation.
+        chrome += self.session_picker_overlay_rows();
+        chrome += self.settings_overlay_rows();
+        chrome += self.theme_picker_overlay_rows();
+        chrome += self.model_selector_overlay_rows();
 
         // Branch picker overlay: header + N visible branches + help line + padding.
         if let Some(ref picker) = self.branch_picker {
@@ -1260,6 +1326,7 @@ pub async fn run_interactive(
 
     Program::new(app)
         .with_alt_screen()
+        .with_mouse_cell_motion()
         .with_input_receiver(ui_rx)
         .run()?;
 
@@ -1927,6 +1994,42 @@ impl PiApp {
         // Ignore spinner ticks when no spinner row is visible so old tick
         // chains naturally stop and do not trigger hidden redraw churn.
         if msg.downcast_ref::<SpinnerTickMsg>().is_some() && !self.spinner_visible() {
+            return None;
+        }
+
+        if let Some(mouse) = msg.downcast_ref::<MouseMsg>() {
+            let modal_active = self.tree_ui.is_some()
+                || self.session_picker.is_some()
+                || self.settings_ui.is_some()
+                || self.theme_picker.is_some()
+                || self.capability_prompt.is_some()
+                || self.extension_custom_overlay.is_some()
+                || self.branch_picker.is_some()
+                || self.model_selector.is_some();
+            if !modal_active
+                && mouse.action == MouseAction::Press
+                && matches!(
+                    mouse.button,
+                    MouseButton::WheelUp
+                        | MouseButton::WheelDown
+                        | MouseButton::WheelLeft
+                        | MouseButton::WheelRight
+                )
+            {
+                let saved_offset = self.conversation_viewport.y_offset();
+                let content = self.build_conversation_content();
+                let effective = self.view_effective_conversation_height().max(1);
+                self.conversation_viewport.height = effective;
+                self.conversation_viewport.set_content(content.trim_end());
+                self.conversation_viewport.set_y_offset(saved_offset);
+                self.conversation_viewport.update(&msg);
+
+                if self.is_at_bottom() {
+                    self.follow_stream_tail = true;
+                } else if self.conversation_viewport.y_offset() != saved_offset {
+                    self.follow_stream_tail = false;
+                }
+            }
             return None;
         }
 
